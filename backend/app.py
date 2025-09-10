@@ -318,10 +318,32 @@ def storage_detail() -> Dict[str, Any]:
             out = subprocess.check_output(["lsblk","-J","-o","NAME,PATH,TYPE,SIZE,MODEL,SERIAL,ROTA,TRAN,MOUNTPOINT,FSTYPE"], timeout=3).decode()
             data = json.loads(out)
             def walk(node):
-                item = {k.lower(): node.get(k) for k in ["NAME","PATH","TYPE","SIZE","MODEL","SERIAL","ROTA","TRAN","MOUNTPOINT","FSTYPE"]}
+                # Ubuntu 22.04's lsblk -J outputs lowercase keys (e.g. "name").
+                # The previous code queried uppercase keys and produced None values,
+                # which rendered blank rows in the UI. Read keys case-insensitively.
+                def g(k: str):
+                    return (
+                        node.get(k)
+                        or node.get(k.lower())
+                        or node.get(k.upper())
+                    )
+                item = {
+                    "name": g("NAME"),
+                    "path": g("PATH"),
+                    "type": g("TYPE"),
+                    "size": g("SIZE"),
+                    "model": g("MODEL"),
+                    "serial": g("SERIAL"),
+                    "rota": g("ROTA"),
+                    "tran": g("TRAN"),
+                    "mountpoint": g("MOUNTPOINT"),
+                    "fstype": g("FSTYPE"),
+                }
                 detail["devices"].append(item)
-                for ch in node.get("children",[]) or []: walk(ch)
-            for n in data.get("blockdevices",[]): walk(n)
+                children = node.get("children") or node.get("CHILDREN") or []
+                for ch in children: walk(ch)
+            for n in data.get("blockdevices",[]) or data.get("BLOCKDEVICES",[]) or []:
+                walk(n)
         except Exception as e:
             detail["devices_error"] = str(e)
     elif platform.system() == "Windows" and shutil.which("wmic"):
