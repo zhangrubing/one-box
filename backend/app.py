@@ -1,4 +1,4 @@
-import asyncio, json, os, time, sqlite3, subprocess, shutil, csv, io, platform
+﻿import asyncio, json, os, time, sqlite3, subprocess, shutil, csv, io, platform, re
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import aiosqlite, psutil
@@ -53,6 +53,7 @@ async def init_db():
         await db.commit()
 
 PREV_DISK_IO = None
+PREV_DISK_PERDISK = {}
 GPU_PRESENT = None
 
 @app.on_event("startup")
@@ -222,6 +223,87 @@ def _gpu_info() -> Dict[str, Any]:
     else: info["note"] = "未检测到 nvidia-smi"
     return info
 
+
+
+def _linux_block_inflight(name: str) -> int:
+    """Return current in-flight I/Os for a block device from /sys/block/*/stat.
+    Returns -1 if not available."""
+    try:
+        base = os.path.basename(name)
+        # In case name like 'sda1' read parent directory 'sda'
+        if base.startswith('nvme'):
+            parent = re.sub(r'p\d+$','', base)
+        else:
+            parent = re.sub(r'\d+$','', base)
+        stat_path = f"/sys/block/{parent}/stat"
+        with open(stat_path, 'r') as f:
+            parts = f.read().strip().split()
+        if len(parts) >= 9:
+            return int(parts[8])
+    except Exception:
+        pass
+    return -1
+
+
+def _smart_info(dev_path: str) -> dict:
+    """Best-effort SMART health/life info using smartctl -j. May require privileges."""
+    info = {"smart_ok": None, "life_used": None, "life_left": None, "power_on_hours": None, "smart_msg": None}
+    import shutil, subprocess
+    sc = shutil.which('smartctl')
+    if not sc:
+        info["smart_msg"] = 'smartctl not found'
+        return info
+    try:
+        out = subprocess.check_output([sc, '-a', '-j', dev_path], stderr=subprocess.STDOUT, timeout=3)
+        data = json.loads(out.decode(errors='ignore'))
+        # health
+        st = (data.get('smart_status') or {}).get('passed')
+        if st is not None:
+            info['smart_ok'] = bool(st)
+        # power on hours
+        ptime = (data.get('power_on_time') or {}).get('hours')
+        if ptime is not None:
+            info['power_on_hours'] = int(ptime)
+        # try NVMe percentage_used
+        nvme = data.get('nvme_smart_health_information_log') or {}
+        if 'percentage_used' in nvme:
+            used = float(nvme.get('percentage_used') or 0)
+            # Some drivers may report >100 when over-provision exceeded
+            info['life_used'] = used
+            info['life_left'] = max(0.0, 100.0 - used)
+        # ATA/SATA attributes
+        if info['life_used'] is None:
+            # Scan attributes for known names
+            for attr in (data.get('ata_smart_attributes') or {}).get('table', []) or []:
+                name = (attr.get('name') or '').lower()
+                raw = attr.get('raw') or {}
+                val = raw.get('value')
+                if val is None:
+                    val = raw.get('string')
+                # Media_Wearout_Indicator (Intel SSD), Percent_Lifetime_Remain (SAS), Wear_Leveling_Count, etc.
+                if 'percent_lifetime_remain' in name:
+                    try:
+                        remain = float(str(val).split()[0])
+                        info['life_left'] = remain
+                        info['life_used'] = max(0.0, 100.0 - remain)
+                        break
+                    except Exception:
+                        continue
+                if 'media_wearout_indicator' in name or 'wear_leveling' in name:
+                    try:
+                        # These are often reported as a normalized value: 100 -> new, 0 -> worn-out
+                        norm = float(attr.get('value') or 0)
+                        # Interpret as remaining life in % if it looks like 0..100
+                        if 0 <= norm <= 100:
+                            info['life_left'] = norm
+                            info['life_used'] = max(0.0, 100.0 - norm)
+                            break
+                    except Exception:
+                        continue
+    except Exception as e:
+        info['smart_msg'] = str(e)
+    return info
+
 def collect_system_snapshot() -> Dict[str, Any]:
     cpu = psutil.cpu_percent(interval=None)
     load = os.getloadavg() if hasattr(os, "getloadavg") else (0,0,0)
@@ -362,10 +444,53 @@ def storage_detail() -> Dict[str, Any]:
                     detail["devices"].append({"name":parts[1],"path":parts[1],"type":"disk","size":parts[4],"model":parts[2],"serial":parts[3],"tran":parts[5]})
         except Exception as e:
             detail["devices_error"] = str(e)
-    # partitions
+    
+    # Attach IO metrics and SMART info
+    try:
+        import psutil as _psu
+        now_t = time.time()
+        perdisk = _psu.disk_io_counters(perdisk=True) or {}
+        global PREV_DISK_PERDISK
+        for d in detail["devices"]:
+            # only physical disks, not loop
+            typ = str(d.get("type") or "").lower()
+            name = d.get("name") or os.path.basename(str(d.get("path") or ""))
+            base = name
+            if base.startswith('nvme'):
+                import re as _re
+                base = _re.sub(r'p\d+$','', base)
+            else:
+                import re as _re
+                base = _re.sub(r'\d+$','', base)
+            # queue depth from /sys/block/*/stat
+            q = _linux_block_inflight(base)
+            io = perdisk.get(base)
+            rMB, wMB, util = None, None, None
+            if io is not None:
+                prev = PREV_DISK_PERDISK.get(base)
+                cur = (io.read_bytes, io.write_bytes, getattr(io, 'busy_time', 0), getattr(io, 'read_time', 0), getattr(io, 'write_time', 0))
+                if prev:
+                    dt = max(0.001, now_t - prev[-1])
+                    rMB = (cur[0]-prev[0]) / dt / (1024*1024)
+                    wMB = (cur[1]-prev[1]) / dt / (1024*1024)
+                    busy = (cur[2]-prev[2]) / 1000.0  # ms -> s
+                    util = max(0.0, min(100.0, busy/dt*100.0))
+                PREV_DISK_PERDISK[base] = (*cur, now_t)
+            d['rmbs'] = rMB
+            d['wmbs'] = wMB
+            d['util_pct'] = util
+            d['queue'] = q if q >= 0 else None
+            # SMART only for top-level disks
+            if typ == 'disk' and str(d.get('path') or '').startswith('/dev/'):
+                d.update({k:v for k,v in _smart_info(str(d.get('path'))).items()})
+    except Exception:
+        pass
+# partitions
     for p in psutil.disk_partitions(all=True):
-        if platform.system() == "Linux" and (str(p.device or "").startswith("/dev/loop") or os.path.basename(str(p.device or "")).startswith("loop")):
-            continue
+        if platform.system() == "Linux":
+            dev = str(p.device or "")
+            if not dev.startswith("/dev/") or dev.startswith("/dev/loop") or os.path.basename(dev).startswith("loop"):
+                continue
         try:
             u = psutil.disk_usage(p.mountpoint)
             detail["partitions"].append({"device": p.device, "mountpoint": p.mountpoint, "fstype": p.fstype, "opts": p.opts, "total": u.total, "used": u.used, "free": u.free, "percent": u.percent})
@@ -520,3 +645,4 @@ async def sse_metrics(request: Request, user: dict = Depends(require_user)):
             yield await sse_event(snap, event="metrics")
             await asyncio.sleep(1.0)
     return StreamingResponse(event_gen(), media_type="text/event-stream")
+
