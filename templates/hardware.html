@@ -1,18 +1,18 @@
 {% extends "base.html" %}{% set page_title="硬件及系统" %}{% block content %}
-<div class="grid cols-2">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
   <div class="card">
     <div class="section-title"><span>操作系统</span></div>
-    <div class="kv mt-3" id="oskv"></div>
+    <div class="mt-3" id="oskv"></div>
   </div>
   <div class="card">
     <div class="section-title"><span>CPU</span></div>
-    <div class="kv mt-3" id="cpukv"></div>
+    <div class="mt-3" id="cpukv"></div>
   </div>
 </div>
-<div class="grid cols-2 mt-4">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
   <div class="card">
     <div class="section-title"><span>内存</span></div>
-    <div class="kv mt-3" id="memkv"></div>
+    <div class="mt-3" id="memkv"></div>
   </div>
   <div class="card">
     <div class="section-title"><span>GPU</span></div>

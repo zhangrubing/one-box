@@ -8,6 +8,7 @@ export class MiniLine{
     this.c = this.noop ? null : this.el.getContext('2d');
     this.max = opt.max||300; this.data = []; this.yMin = opt.yMin ?? 0; this.yMax = opt.yMax ?? 100;
     this.axes = opt.axes || false; this.ticks = opt.ticks || [0,25,50,75,100];
+    this.xLabels = opt.xLabels || ["-60s","-30s","now"];
     if (!this.noop){
       const dpr = window.devicePixelRatio||1; this.el.width=this.el.clientWidth*dpr; this.el.height=this.el.clientHeight*dpr; this.c.scale(dpr,dpr);
       window.addEventListener('resize', ()=>{ const dpr=window.devicePixelRatio||1; this.el.width=this.el.clientWidth*dpr; this.el.height=this.el.clientHeight*dpr; this.c.setTransform(1,0,0,1,0,0); this.c.scale(dpr,dpr); this.draw(); });
@@ -18,6 +19,7 @@ export class MiniLine{
   }
   push(v){ if(this.noop) return; this.data.push({t:Date.now(), v}); if(this.data.length>this.max) this.data.shift(); this.draw(); }
   setRange(a,b){ if(this.noop) return; this.yMin=a; this.yMax=b; this.draw(); }
+  setXLabels(lbls){ if(this.noop) return; if(Array.isArray(lbls)) this.xLabels = lbls; this.draw(); }
   clear(){ if(this.noop) return; this.c.clearRect(0,0,this.el.clientWidth,this.el.clientHeight); }
   draw(){
     if(this.noop) return;
@@ -38,8 +40,8 @@ export class MiniLine{
         c.strokeStyle = border; c.beginPath(); c.moveTo(padL, y); c.lineTo(padL+w, y); c.stroke();
         c.fillText(String(t), 4, y+4);
       });
-      const labels = ["-60s","-30s","now"];
-      [0, 0.5, 1].forEach((p,i)=>{ const x = padL + p*w; c.fillText(labels[i], x-12, padT+h+14); });
+      const labels = this.xLabels || ["-60s","-30s","now"];
+      [0, 0.5, 1].forEach((p,i)=>{ const x = padL + p*w; c.fillText(labels[i]||"", x-12, padT+h+14); });
     }
     c.strokeStyle=brand; c.lineWidth=2;
     if(!this.data.length) return;
