@@ -260,7 +260,21 @@ def collect_system_snapshot() -> Dict[str, Any]:
     else:
         gpu_util_avg = 0.0; gpu_temp_avg = 0.0
     mem_percent = float(psutil.virtual_memory().percent)
-    return {"time": int(time.time()), "cpu_percent": cpu, "load_avg": load, "mem": mem, "swap": swap, "disks": disks, "net": net2, "boot_time": boot, "processes": procs}
+    return {
+        "time": int(time.time()),
+        "cpu_percent": cpu,
+        "load_avg": load,
+        "mem": mem,
+        "swap": swap,
+        "disks": disks,
+        "net": net2,
+        "boot_time": boot,
+        "processes": procs,
+        "mem_percent": mem_percent,
+        "disk_mb_s": disk_rate,
+        "gpu_util_avg": gpu_util_avg,
+        "gpu_temp_avg": gpu_temp_avg
+    }
 
 @app.get("/api/system/summary")
 async def api_system_summary(request: Request, user: dict = Depends(require_user)):
