@@ -339,6 +339,12 @@ def storage_detail() -> Dict[str, Any]:
                     "mountpoint": g("MOUNTPOINT"),
                     "fstype": g("FSTYPE"),
                 }
+                                # filter out loop devices (snap loop mounts)
+                _tp = str(item.get("type") or "").lower()
+                _nm = str(item.get("name") or "")
+                _pth = str(item.get("path") or "")
+                if _tp == "loop" or _nm.startswith("loop") or _pth.startswith("/dev/loop"):
+                    return
                 detail["devices"].append(item)
                 children = node.get("children") or node.get("CHILDREN") or []
                 for ch in children: walk(ch)
@@ -358,6 +364,8 @@ def storage_detail() -> Dict[str, Any]:
             detail["devices_error"] = str(e)
     # partitions
     for p in psutil.disk_partitions(all=True):
+        if platform.system() == "Linux" and (str(p.device or "").startswith("/dev/loop") or os.path.basename(str(p.device or "")).startswith("loop")):
+            continue
         try:
             u = psutil.disk_usage(p.mountpoint)
             detail["partitions"].append({"device": p.device, "mountpoint": p.mountpoint, "fstype": p.fstype, "opts": p.opts, "total": u.total, "used": u.used, "free": u.free, "percent": u.percent})
