@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>🖥️ GPU 详表 · 英智AI监控系统</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="app">
+  
+    <aside>
+      <div class="brand">
+        <div class="logo"></div>
+        <div><div class="t1">英智AI监控系统</div><div class="t2">OneBox • 单机版</div></div>
+      </div>
+      <nav class="nav"><div class="nav-sec">单机管理</div><a class="" href="index.html">📊 仪表盘</a><a class="" href="hardware.html">🧩 硬件与系统</a><a class="active" href="gpu.html">🖥️ GPU 详表</a><a class="" href="network.html">🌐 网络接口</a><a class="" href="storage.html">💾 存储与磁盘</a><a class="" href="logs.html">📜 日志查看</a><a class="" href="alerts.html">🚨 告警中心</a><a class="" href="operations.html">🧰 运维操作</a><a class="" href="settings.html">⚙️ 设置与基线</a><a class="" href="reports.html">🧷 报表与导出</a><a class="" href="users.html">👤 用户管理</a><a class="" href="audit.html">🛡️ 审计</a><a class="" href="about.html">ℹ️ 关于本机</a></nav>
+      <div style="padding:16px"><div class="tag">版本 v1.0 单机</div></div>
+    </aside>
+    
+  <div>
+    
+    <header class="top">
+      <div class="search">🔎 <input placeholder="搜索（页面内筛选）…" /><span class="tag">本机：online</span></div>
+      <div class="actions">
+        <label class="switch" title="明暗切换"><input id="theme" type="checkbox" checked onchange="toggleLight(this)"/><span class="slider"></span></label>
+        
+        <button class="btn primary">一键巡检</button>
+        <div class="tag">🖥️ GPU 详表</div>
+      </div>
+    </header>
+    
+    <main>
+<div class="panel">
+  <div class="hd"><div>GPU 详细信息</div><div class="tag">MIG：关闭</div></div>
+  <div class="bd">
+    <table>
+      <thead><tr><th>设备</th><th>型号</th><th>温度</th><th>功耗</th><th>利用率</th><th>状态</th></tr></thead>
+      <tbody><tr><td>GPU0</td><td>H100</td><td>70℃</td><td>188W</td><td>66%</td><td><span class='tag ok'>正常</span></td></tr>
+<tr><td>GPU1</td><td>H100</td><td>49℃</td><td>254W</td><td>34%</td><td><span class='tag ok'>正常</span></td></tr>
+<tr><td>GPU2</td><td>H100</td><td>54℃</td><td>271W</td><td>62%</td><td><span class='tag ok'>正常</span></td></tr>
+<tr><td>GPU3</td><td>H100</td><td>48℃</td><td>244W</td><td>89%</td><td><span class='tag ok'>正常</span></td></tr>
+<tr><td>GPU4</td><td>H100</td><td>76℃</td><td>187W</td><td>73%</td><td><span class='tag ok'>正常</span></td></tr>
+<tr><td>GPU5</td><td>H100</td><td>73℃</td><td>178W</td><td>92%</td><td><span class='tag ok'>正常</span></td></tr>
+<tr><td>GPU6</td><td>H100</td><td>40℃</td><td>274W</td><td>21%</td><td><span class='tag ok'>正常</span></td></tr>
+<tr><td>GPU7</td><td>H100</td><td>46℃</td><td>227W</td><td>44%</td><td><span class='tag ok'>正常</span></td></tr></tbody>
+    </table>
+  </div>
+  <div class="footer">数据：nvidia-smi / DCGM</div>
+</div>
+<div class="grid cols-2">
+  <div class="panel"><div class="hd"><div>显存占用（近 1h）</div><div class="tag">GB</div></div><div class="bd"><canvas id="g1"></canvas></div></div>
+  <div class="panel"><div class="hd"><div>NVLink 传输（近 1h）</div><div class="tag">GB/s</div></div><div class="bd"><canvas id="g2"></canvas></div></div>
+</div>
+</main>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+ready(()=>{
+  sparkline('g1', Array.from({length:30},()=>rand(24,70)), '#5b8cff');
+  sparkline('g2', Array.from({length:30},()=>rand(10,48)), '#6ae2ff');
+});
+</script>
+</body>
+</html>

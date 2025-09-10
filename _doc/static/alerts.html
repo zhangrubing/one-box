@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>🚨 告警中心 · 英智AI监控系统</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="app">
+  
+    <aside>
+      <div class="brand">
+        <div class="logo"></div>
+        <div><div class="t1">英智AI监控系统</div><div class="t2">OneBox • 单机版</div></div>
+      </div>
+      <nav class="nav"><div class="nav-sec">单机管理</div><a class="" href="index.html">📊 仪表盘</a><a class="" href="hardware.html">🧩 硬件与系统</a><a class="" href="gpu.html">🖥️ GPU 详表</a><a class="" href="network.html">🌐 网络接口</a><a class="" href="storage.html">💾 存储与磁盘</a><a class="" href="logs.html">📜 日志查看</a><a class="active" href="alerts.html">🚨 告警中心</a><a class="" href="operations.html">🧰 运维操作</a><a class="" href="settings.html">⚙️ 设置与基线</a><a class="" href="reports.html">🧷 报表与导出</a><a class="" href="users.html">👤 用户管理</a><a class="" href="audit.html">🛡️ 审计</a><a class="" href="about.html">ℹ️ 关于本机</a></nav>
+      <div style="padding:16px"><div class="tag">版本 v1.0 单机</div></div>
+    </aside>
+    
+  <div>
+    
+    <header class="top">
+      <div class="search">🔎 <input placeholder="搜索（页面内筛选）…" /><span class="tag">本机：online</span></div>
+      <div class="actions">
+        <label class="switch" title="明暗切换"><input id="theme" type="checkbox" checked onchange="toggleLight(this)"/><span class="slider"></span></label>
+        
+        <button class="btn primary">一键巡检</button>
+        <div class="tag">🚨 告警中心</div>
+      </div>
+    </header>
+    
+    <main>
+<div class="panel">
+  <div class="hd"><div>告警列表</div>
+    <div>
+      <select class="input"><option>全部级别</option><option>严重</option><option>高</option><option>中</option><option>低</option></select>
+      <button class="btn">批量确认</button>
+    </div>
+  </div>
+  <div class="bd">
+    <table>
+      <thead><tr><th>时间</th><th>对象</th><th>内容</th><th>级别</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr><td>10:22</td><td>gpu0</td><td>温度 ≥ 85℃</td><td><span class="tag err">严重</span></td><td>未确认</td><td><button class="btn">确认</button></td></tr>
+        <tr><td>09:58</td><td>ib0</td><td>SymbolError 突增</td><td><span class="tag warn">高</span></td><td>抑制</td><td><button class="btn">解除抑制</button></td></tr>
+        <tr><td>09:10</td><td>nvme2</td><td>SMART 阈值</td><td><span class="tag warn">高</span></td><td>处理中</td><td><button class="btn">转工单</button></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</main>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script></script>
+</body>
+</html>

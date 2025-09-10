@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% set page_title="用户管理" %}{% block content %}
+<div class="card">
+  <div class="flex"><div class="section-title"><span>用户列表（管理员）</span></div><div style="margin-left:auto;"><button class="btn" id="addBtn">+ 新增用户</button></div></div>
+  <table class="table mt-3"><thead><tr><th>ID</th><th>用户名</th><th>管理员</th><th>创建时间</th><th>操作</th></tr></thead><tbody id="tbody"></tbody></table>
+</div>
+<div class="modal-backdrop" id="dlg"><div class="modal">
+  <div class="title">新增用户</div>
+  <div class="row"><input class="input" id="u" placeholder="用户名"></div>
+  <div class="row"><input class="input" id="p" placeholder="密码" type="password"></div>
+  <div class="row"><label><input type="checkbox" id="adm"> 管理员</label></div>
+  <div class="actions"><button class="btn secondary" id="cancel">取消</button><button class="btn ok" id="ok">确定</button></div>
+</div></div>
+<script type="module">
+import {apiGet, apiPost, apiDelete, $} from "{{ url_for('static', path='assets/common.js') }}";
+const tbody=$("#tbody"), dlg=$("#dlg"), addBtn=$("#addBtn"), u=$("#u"), p=$("#p"), adm=$("#adm");
+function show(d){ d.classList.add('show'); } function hide(d){ d.classList.remove('show'); }
+async function load(){
+  const r = await apiGet('/api/users');
+  tbody.innerHTML = r.items.map(x=>`<tr><td>${x.id}</td><td>${x.username}</td><td>${x.is_admin?'是':'否'}</td><td>${x.created_at}</td><td><button class='btn secondary' data-id='${x.id}' data-act='reset'>重置密码</button> <button class='btn danger' data-id='${x.id}' data-act='del'>删除</button></td></tr>`).join('');
+}
+addBtn.addEventListener('click', ()=>{ u.value=''; p.value=''; adm.checked=false; show(dlg); });
+$("#cancel").addEventListener('click', ()=>hide(dlg));
+$("#ok").addEventListener('click', async ()=>{ await apiPost('/api/users', {username:u.value.trim(), password:p.value, is_admin:adm.checked}); hide(dlg); await load(); });
+tbody.addEventListener('click', async (e)=>{ const t=e.target.closest('button'); if(!t) return; const id=t.dataset.id; const act=t.dataset.act;
+  if(act==='del'){ if(confirm('确认删除?')){ await apiDelete('/api/users/'+id); await load(); } }
+  if(act==='reset'){ const np=prompt('输入新密码'); if(np) await apiPost('/api/users/'+id, {password:np}); }
+});
+load();
+</script>
+{% endblock %}

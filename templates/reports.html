@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% set page_title="报告" %}{% block content %}
+<div class="card"><div class="section-title"><span>指标报表</span></div>
+<div class="mt-3">起止：<input class="input" id="since" placeholder="Unix 秒"> - <input class="input" id="until" placeholder="Unix 秒"> <button class="btn" id="go">查询</button> <a id="csv" class="btn secondary" href="#" target="_blank">导出 CSV</a></div>
+<table class="table mt-3"><thead><tr><th>时间</th><th>CPU%</th><th>load1/5/15</th><th>进程数</th></tr></thead><tbody id="tb"></tbody></table><div class="mt-2" id="sum"></div></div>
+<script type="module">
+import {apiGet,$} from "{{ url_for('static', path='assets/common.js') }}";
+const tb=$('#tb'),sum=$('#sum'),since=$('#since'),until=$('#until'),csv=$('#csv'); const now=()=>Math.floor(Date.now()/1000); since.value=now()-3600; until.value=now(); async function load(){ const r=await apiGet(`/api/reports/metrics?since=${since.value}&until=${until.value}`); tb.innerHTML=r.items.map(x=>`<tr><td>${x.ts}</td><td>${(x.cpu_percent||0).toFixed(1)}</td><td>${[x.load1,x.load5,x.load15].map(v=>(v||0).toFixed(2)).join(' / ')}</td><td>${x.processes}</td></tr>`).join(''); sum.textContent='样本数 '+r.summary.count+'；CPU 平均 '+r.summary.cpu_avg.toFixed(2)+'%；进程平均 '+r.summary.procs_avg.toFixed(2); csv.href=`/api/reports/metrics.csv?since=${since.value}&until=${until.value}`; } document.getElementById('go').onclick=load; load();
+</script>
+{% endblock %}

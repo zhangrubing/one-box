@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>!function(){try{var t=localStorage.getItem("theme");if(!t){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}document.documentElement.setAttribute("data-theme",t)}catch(e){}}();</script>
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/style.css') }}">
+  <title>登录 - 一体机监控</title>
+</head>
+<body>
+<div class="login-wrap">
+  <div class='flex' style='justify-content:center'><img src="{{ url_for('static', path='assets/logo.svg') }}" alt='logo' style='height:36px'></div>
+  <h2 style='text-align:center'>登录</h2>
+  <form id="f">
+    <div class="mt-3"><label>用户名</label><input class="input" name="username" placeholder="admin" required value="admin"></div>
+    <div class="mt-3"><label>密码</label><input class="input" name="password" type="password" placeholder="admin123" required value="admin123"></div>
+    <div class="mt-4 right"><button class="btn">登录</button></div>
+    <div id="msg" class="small mt-2"></div>
+  </form>
+</div>
+<script type="module">
+import { apiPost, $ } from "{{ url_for('static', path='assets/common.js') }}";
+const f = $("#f"); const msg=$("#msg");
+f.addEventListener("submit", async (e)=>{
+  e.preventDefault();
+  const fd = new FormData(f);
+  try { await apiPost("/api/login", {username:fd.get("username"), password:fd.get("password")}); location.href="/dashboard"; }
+  catch(err) { msg.textContent = "登录失败：" + (err.message||""); }
+});
+</script>
+</body>
+</html>

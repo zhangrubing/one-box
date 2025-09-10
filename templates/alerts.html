@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% set page_title="告警中心" %}{% block content %}
+<div class="card"><div class="flex"><div class="section-title"><span>告警</span></div><div style="margin-left:auto;"><button class="btn" id="new">+ 新增（管理员）</button></div></div>
+<table class="table mt-3"><thead><tr><th>ID</th><th>级别</th><th>标题</th><th>内容</th><th>时间</th><th>状态</th><th>操作</th></tr></thead><tbody id="tb"></tbody></table>
+</div>
+<div class="modal-backdrop" id="dlg"><div class="modal"><div class="title">新增告警</div><div class="row"><input class="input" id="lv" placeholder="级别 如 WARN/ERROR"></div><div class="row"><input class="input" id="ti" placeholder="标题"></div><div class="row"><input class="input" id="ms" placeholder="内容"></div><div class="actions"><button class="btn secondary" id="cancel">取消</button><button class="btn ok" id="ok">确定</button></div></div></div>
+<script type="module">
+import {apiGet,apiPost,apiDelete,$} from "{{ url_for('static', path='assets/common.js') }}";
+const tb=$('#tb'),dlg=$('#dlg'),lv=$('#lv'),ti=$('#ti'),ms=$('#ms'); const show=()=>dlg.classList.add('show'), hide=()=>dlg.classList.remove('show'); async function load(){ const r=await apiGet('/api/alerts'); tb.innerHTML=r.items.map(x=>`<tr><td>${x.id}</td><td>${x.level}</td><td>${x.title}</td><td>${x.message||''}</td><td>${x.created_at}</td><td>${x.acknowledged?'已确认':'未确认'}</td><td><button class='btn ok' data-id='${x.id}' data-act='ack'>确认</button> <button class='btn danger' data-id='${x.id}' data-act='del'>删除</button></td></tr>`).join(''); } document.body.addEventListener('click', async e=>{const t=e.target.closest('button'); if(!t)return; const id=t.dataset.id, act=t.dataset.act; if(act==='ack'){ await apiPost('/api/alerts/'+id+'/ack',{}); load(); } if(act==='del'){ await apiDelete('/api/alerts/'+id); load(); } }); document.getElementById('new').onclick=()=>{lv.value='WARN';ti.value='';ms.value='';show();}; document.getElementById('cancel').onclick=hide; document.getElementById('ok').onclick=async()=>{ await apiPost('/api/alerts',{level:lv.value,title:ti.value,message:ms.value}); hide(); load();}; load();
+</script>
+{% endblock %}

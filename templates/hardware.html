@@ -1,0 +1,43 @@
+{% extends "base.html" %}{% set page_title="硬件及系统" %}{% block content %}
+<div class="grid cols-2">
+  <div class="card">
+    <div class="section-title"><span>操作系统</span></div>
+    <div class="kv mt-3" id="oskv"></div>
+  </div>
+  <div class="card">
+    <div class="section-title"><span>CPU</span></div>
+    <div class="kv mt-3" id="cpukv"></div>
+  </div>
+</div>
+<div class="grid cols-2 mt-4">
+  <div class="card">
+    <div class="section-title"><span>内存</span></div>
+    <div class="kv mt-3" id="memkv"></div>
+  </div>
+  <div class="card">
+    <div class="section-title"><span>GPU</span></div>
+    <table class="table mt-3"><thead><tr><th>#</th><th>型号</th><th>驱动</th><th>显存</th><th>使用</th><th>温度</th><th>负载</th></tr></thead><tbody id="gputb"></tbody></table>
+    <div class="small mt-2" id="gpunote"></div>
+  </div>
+</div>
+<div class="card mt-4">
+  <div class="section-title"><span>磁盘</span></div>
+  <table class="table mt-3"><thead><tr><th>设备</th><th>挂载点</th><th>类型</th><th>已用</th><th>总计</th><th>使用率</th></tr></thead><tbody id="disktb"></tbody></table>
+</div>
+<script type="module">
+import {apiGet,$,formatBytes,fmtUptime} from "{{ url_for('static', path='assets/common.js') }}";
+const oskv=$('#oskv'), cpukv=$('#cpukv'), memkv=$('#memkv'), gputb=$('#gputb'), disktb=$('#disktb'), gpunote=$('#gpunote');
+function fillKV(el, pairs){ el.innerHTML=''; pairs.forEach(([k,v])=>{ const row=document.createElement('div'); row.className='kv'; row.innerHTML=`<div>${k}</div><div>${v}</div>`; el.appendChild(row); }); }
+async function loadAll(){
+  const r = await apiGet('/api/system/summary');
+  fillKV(oskv, [['系统', `${r.os.system} ${r.os.release}`],['内核版本', r.os.version],['主机名', r.os.node],['架构', r.os.machine],['Python', r.os.python],['开机时长', fmtUptime(r.os.uptime)]]);
+  const fcur = r.cpu.freq_current? (r.cpu.freq_current/1000).toFixed(2)+' GHz' : '-'; const fmax = r.cpu.freq_max? (r.cpu.freq_max/1000).toFixed(2)+' GHz' : '-';
+  fillKV(cpukv, [['型号', r.cpu.model],['物理核心/逻辑核心', `${r.cpu.cores_physical} / ${r.cpu.cores_logical}`],['主频(当前/最大)', `${fcur} / ${fmax}`],['平均负载(1/5/15)', (r.cpu.load_avg||[]).map(x=>Number(x).toFixed(2)).join(' / ')],['使用率', (r.cpu.usage_percent||0).toFixed(1)+'%']]);
+  fillKV(memkv, [['总内存', formatBytes(r.memory.total)],['已用/可用', `${formatBytes(r.memory.used)} / ${formatBytes(r.memory.available)}`],['使用率', (r.memory.percent||0).toFixed(1)+'%'],['Swap 总/已用', `${formatBytes(r.memory.swap_total)} / ${formatBytes(r.memory.swap_used)}`],['Swap 使用率', (r.memory.swap_percent||0).toFixed(1)+'%']]);
+  disktb.innerHTML = (r.disks||[]).map(d=>`<tr><td>${d.device}</td><td>${d.mountpoint}</td><td>${d.fstype}</td><td>${formatBytes(d.used)}</td><td>${formatBytes(d.total)}</td><td>${(d.percent??0).toFixed(1)}%</td></tr>`).join('');
+  renderGpu(r.gpu);
+}
+function renderGpu(g){ gputb.innerHTML=(g.gpus||[]).map(x=>`<tr><td>${x.index}</td><td>${x.name}</td><td>${x.driver}</td><td>${x.mem_total} MB</td><td>${x.mem_used} MB</td><td>${x.temp??'-'}℃</td><td>${x.util??'-'}%</td></tr>`).join(''); gpunote.textContent=g.note||g.error||''; }
+loadAll(); document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) loadAll(); });
+</script>
+{% endblock %}

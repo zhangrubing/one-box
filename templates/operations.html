@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% set page_title="运维操作" %}{% block content %}
+<div class="card"><div class="section-title"><span>白名单命令（管理员）</span></div>
+<div class="mt-3"><select id="cmd" class="input" style="max-width:200px"><option value="uptime">uptime</option><option value="df">df -h</option></select> <button class="btn" id="run">执行</button></div><pre class="mt-3" id="out"></pre></div>
+<script type="module">
+import {apiPost,$} from "{{ url_for('static', path='assets/common.js') }}"; const cmd=$('#cmd'), out=$('#out'); document.getElementById('run').onclick=async()=>{ out.textContent='执行中...'; const r=await apiPost('/api/ops/run?cmd='+encodeURIComponent(cmd.value),{}); out.textContent=r.output||''; };
+</script>
+{% endblock %}

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>登录 · 英智AI监控系统</title>
+  <link rel="stylesheet" href="assets/style.css" />
+  <style>
+    body{display:grid;place-items:center;min-height:100vh}
+    .card{width:min(420px, 92vw);border:1px solid var(--border);border-radius:20px;padding:24px;background:linear-gradient(180deg, rgba(16,22,43,.9), rgba(16,22,43,.7));box-shadow:var(--shadow)}
+    .head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+    .logo{width:40px;height:40px;border-radius:12px;background: conic-gradient(from 210deg, var(--brand), var(--brand2));box-shadow:0 6px 18px rgba(91,140,255,.35)}
+    .title{font-size:20px;font-weight:700}
+    .subtitle{color:var(--muted);font-size:12px;margin-bottom:16px}
+    .row{display:grid;gap:8px;margin:10px 0}
+    .input{width:100%}
+    .hint{color:var(--muted);font-size:12px}
+    .actions{display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:8px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <div class="logo"></div>
+      <div>
+        <div class="title">英智AI监控系统</div>
+        <div class="subtitle">单机版 · 本地安全登录（静态演示）</div>
+      </div>
+    </div>
+    <div class="row">
+      <label>用户名</label>
+      <input class="input" id="u" placeholder="admin" />
+    </div>
+    <div class="row">
+      <label>密码</label>
+      <input class="input" id="p" type="password" placeholder="••••••••" />
+    </div>
+    <div class="row">
+      <label class="hint"><input type="checkbox" id="remember" /> 记住我（本机存储）</label>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="document.getElementById('u').value='admin';document.getElementById('p').value='admin123';">填充示例</button>
+      <button class="btn primary" onclick="login()">登录</button>
+    </div>
+    <div class="hint" style="margin-top:10px">静态演示：不校验密码，进入后右上角有“退出”。</div>
+  </div>
+<script>
+function login(){
+  const u = document.getElementById('u').value.trim();
+  if(!u){ alert('请输入用户名'); return }
+  if(document.getElementById('remember').checked){
+    localStorage.setItem('onebox_user', JSON.stringify({u, t: Date.now()}));
+  }else{ localStorage.removeItem('onebox_user'); }
+  location.href='index.html';
+}
+</script>
+</body>
+</html>

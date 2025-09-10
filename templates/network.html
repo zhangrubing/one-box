@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% set page_title="网络接口" %}{% block content %}
+<div class="card"><div class="flex"><div class="section-title"><span>网络接口</span></div><div style="margin-left:auto"><button class="btn" id="refresh">刷新</button></div></div>
+<table class="table mt-3"><thead><tr><th>接口</th><th>UP</th><th>速率</th><th>MTU</th><th>地址</th></tr></thead><tbody id="tb"></tbody></table>
+</div>
+<script type="module">
+import {apiGet,$} from "{{ url_for('static', path='assets/common.js') }}";
+const tb=$('#tb'); async function load(){ const r=await apiGet('/api/system/network'); tb.innerHTML=Object.entries(r).map(([k,v])=>`<tr><td>${k}</td><td>${v.isup?'是':'否'}</td><td>${v.speed||'-'}</td><td>${v.mtu||'-'}</td><td>${(v.addrs||[]).map(a=>a.address).join('<br>')}</td></tr>`).join(''); }
+document.getElementById('refresh').onclick=load; load();
+</script>
+{% endblock %}

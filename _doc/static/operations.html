@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>🧰 运维操作 · 英智AI监控系统</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="app">
+  
+    <aside>
+      <div class="brand">
+        <div class="logo"></div>
+        <div><div class="t1">英智AI监控系统</div><div class="t2">OneBox • 单机版</div></div>
+      </div>
+      <nav class="nav"><div class="nav-sec">单机管理</div><a class="" href="index.html">📊 仪表盘</a><a class="" href="hardware.html">🧩 硬件与系统</a><a class="" href="gpu.html">🖥️ GPU 详表</a><a class="" href="network.html">🌐 网络接口</a><a class="" href="storage.html">💾 存储与磁盘</a><a class="" href="logs.html">📜 日志查看</a><a class="" href="alerts.html">🚨 告警中心</a><a class="active" href="operations.html">🧰 运维操作</a><a class="" href="settings.html">⚙️ 设置与基线</a><a class="" href="reports.html">🧷 报表与导出</a><a class="" href="users.html">👤 用户管理</a><a class="" href="audit.html">🛡️ 审计</a><a class="" href="about.html">ℹ️ 关于本机</a></nav>
+      <div style="padding:16px"><div class="tag">版本 v1.0 单机</div></div>
+    </aside>
+    
+  <div>
+    
+    <header class="top">
+      <div class="search">🔎 <input placeholder="搜索（页面内筛选）…" /><span class="tag">本机：online</span></div>
+      <div class="actions">
+        <label class="switch" title="明暗切换"><input id="theme" type="checkbox" checked onchange="toggleLight(this)"/><span class="slider"></span></label>
+        
+        <button class="btn primary">一键巡检</button>
+        <div class="tag">🧰 运维操作</div>
+      </div>
+    </header>
+    
+    <main>
+<div class="panel">
+  <div class="hd"><div>带外控制（BMC/IPMI）</div><div class="tag">谨慎操作</div></div>
+  <div class="bd form">
+    <div class="row"><label>电源：</label><div><button class="btn">开机</button> <button class="btn">关机</button> <button class="btn warn">强制重启</button></div></div>
+    <div class="row"><label>KVM Console：</label><div><button class="btn primary">打开控制台</button></div></div>
+    <div class="row"><label>虚拟介质：</label><div><input class="input" placeholder="ISO 路径 /mnt/iso/..." /> <button class="btn">挂载</button></div></div>
+  </div>
+</div>
+<div class="panel">
+  <div class="hd"><div>带内作业（批量命令）</div><div class="tag">以 root 运行</div></div>
+  <div class="bd form">
+    <div class="row"><label>命令：</label><textarea class="input" rows="5">nvidia-smi --query-gpu=utilization.gpu,temperature.gpu --format=csv</textarea></div>
+    <div class="row"><label></label><div><button class="btn primary">执行</button> <button class="btn">保存模板</button></div></div>
+  </div>
+</div>
+<div class="panel">
+  <div class="hd"><div>固件/驱动升级</div><div class="tag">支持回滚</div></div>
+  <div class="bd form">
+    <div class="row"><label>GPU 驱动：</label><div><input class="input" value="550.54" /> <button class="btn">检查兼容性</button> <button class="btn primary">升级</button></div></div>
+    <div class="row"><label>IB 固件：</label><div><input class="input" value="xx.xx.xxxx" /> <button class="btn">升级</button></div></div>
+  </div>
+</div>
+</main>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="home" viewBox="0 0 24 24"><path fill="currentColor" d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3l9-8z"/></symbol>
+  <symbol id="chip" viewBox="0 0 24 24"><path fill="currentColor" d="M9 3v2H7v2H5v2H3v4h2v2h2v2h2v2h6v-2h2v-2h2v-2h2V9h-2V7h-2V5h-2V3H9zm8 6v6H7V9h10z"/></symbol>
+  <symbol id="gpu" viewBox="0 0 24 24"><path fill="currentColor" d="M3 7h14a2 2 0 0 1 2 2v4h2v2h-2v2h-2v-2H3V7zm2 2v6h12V9H5zm2 1h3v4H7v-4zm-2 9h10v2H5v-2z"/></symbol>
+  <symbol id="net" viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h16v6H4V4zm0 10h7v6H4v-6zm9 0h7v6h-7v-6z"/></symbol>
+  <symbol id="drive" viewBox="0 0 24 24"><path fill="currentColor" d="M4 7h16l2 6v6H2v-6l2-6zm2 2l-1.2 4h14.4L18 9H6zm-2 8h16v2H4v-2z"/></symbol>
+  <symbol id="logs" viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h16v2H4V4zm0 4h10v2H4V8zm0 4h16v2H4v-2zm0 4h10v2H4v-2z"/></symbol>
+  <symbol id="alert" viewBox="0 0 24 24"><path fill="currentColor" d="M1 21h22L12 2 1 21zm12-3h-2v2h2v-2zm0-6h-2v5h2v-5z"/></symbol>
+  <symbol id="terminal" viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v16H3V4zm2 2v12h14V6H5zm2 2l3 3-3 3 1.5 1.5L12 12 8.5 8.5 7 10zm5 6h5v2h-5v-2z"/></symbol>
+  <symbol id="user" viewBox="0 0 24 24"><path fill="currentColor" d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm-7 8a7 7 0 0 1 14 0z"/></symbol>
+  <symbol id="report" viewBox="0 0 24 24"><path fill="currentColor" d="M6 2h9l5 5v15H6V2zm9 1.5V8h4.5L15 3.5zM8 12h8v2H8v-2zm0 4h8v2H8v-2z"/></symbol>
+  <symbol id="audit" viewBox="0 0 24 24"><path fill="currentColor" d="M12 1l9 4v6c0 5-3.8 9.7-9 11-5.2-1.3-9-6-9-11V5l9-4zm0 3.1L6 6v4c0 3.9 2.8 7.6 6 8.6 3.2-1 6-4.7 6-8.6V6l-6-1.9zM11 7h2v5h-2V7zm0 6h2v2h-2v-2z"/></symbol>
+  <symbol id="about" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10.01 10.01 0 0 0 12 2zm1 15h-2v-6h2zm0-8h-2V7h2z"/></symbol>
+</svg>

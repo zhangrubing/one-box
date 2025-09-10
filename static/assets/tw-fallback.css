@@ -1,0 +1,15 @@
+/* Minimal fallback for key Tailwind utilities we use */
+.container{max-width:1200px;margin-left:auto;margin-right:auto}
+.p-4{padding:1rem}.p-6{padding:1.5rem}.lg\:p-6{padding:1.5rem}
+.mt-2{margin-top:.5rem}.mt-4{margin-top:1rem}
+.space-y-4> :not([hidden])~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1rem*var(--tw-space-y-reverse))}
+.grid{display:grid}
+.gap-4{gap:1rem}
+.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}
+.grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (min-width:768px){.md\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (min-width:1280px){.xl\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.xl\:grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.w-full{width:100%}.text-sm{font-size:.875rem;line-height:1.25rem}
+.flex{display:flex}.items-center{align-items:center}.justify-between{justify-content:space-between}.ml-auto{margin-left:auto}
+.rounded-lg{border-radius:.5rem}.rounded-xl{border-radius:.75rem}

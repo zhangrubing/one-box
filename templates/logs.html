@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% set page_title="日志查看" %}{% block content %}
+<div class="card"><div class="flex"><div class="section-title"><span>系统日志</span></div><div style="margin-left:auto;"><input class="input" id="q" placeholder="关键字"> <button class="btn" id="search">搜索</button></div></div>
+<table class="table mt-3"><thead><tr><th>ID</th><th>分类</th><th>内容</th><th>时间</th></tr></thead><tbody id="tb"></tbody></table>
+</div>
+<script type="module">
+import {apiGet,$} from "{{ url_for('static', path='assets/common.js') }}";
+const tb=$('#tb'), q=$('#q'); async function load(){ const r=await apiGet('/api/logs?q='+(encodeURIComponent(q.value||''))); tb.innerHTML=r.items.map(x=>`<tr><td>${x.id}</td><td>${x.category}</td><td>${x.message}</td><td>${x.created_at}</td></tr>`).join(''); } document.getElementById('search').onclick=load; load();
+</script>
+{% endblock %}

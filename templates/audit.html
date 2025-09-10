@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% set page_title="审计" %}{% block content %}
+<div class="card"><div class="flex"><div class="section-title"><span>审计日志（管理员）</span></div><div style="margin-left:auto;"><input class="input" id="u" placeholder="用户名过滤"> <button class="btn" id="go">筛选</button></div></div>
+<table class="table mt-3"><thead><tr><th>ID</th><th>用户</th><th>动作</th><th>详情</th><th>IP</th><th>UA</th><th>时间</th></tr></thead><tbody id="tb"></tbody></table></div>
+<script type="module">
+import {apiGet,$} from "{{ url_for('static', path='assets/common.js') }}";
+const tb=$('#tb'),u=$('#u'); async function load(){ const r=await apiGet('/api/audit?user_like='+(encodeURIComponent(u.value||''))); tb.innerHTML=r.items.map(x=>`<tr><td>${x.id}</td><td>${x.username||''}</td><td>${x.action||''}</td><td>${x.detail||''}</td><td>${x.ip||''}</td><td>${x.ua||''}</td><td>${x.created_at||''}</td></tr>`).join(''); }; document.getElementById('go').onclick=load; load();
+</script>
+{% endblock %}

@@ -1,0 +1,26 @@
+:root { --top-h: 56px; }
+html, body { margin:0 !important; padding:0 !important; }
+.container { gap:0 !important; }
+.header { height: var(--top-h); min-height: var(--top-h); margin:0 !important; width:100% !important; }
+main { margin:0 !important; }
+.content > *:first-child { margin-top: 0; }
+
+/* Light-mode hard overrides to avoid residual dark styling */
+html[data-theme="light"] body,
+html[data-theme="light"] main,
+html[data-theme="light"] .sidebar,
+html[data-theme="light"] .header,
+html[data-theme="light"] .card,
+html[data-theme="light"] .table,
+html[data-theme="light"] .input,
+html[data-theme="light"] .modal { background: var(--layer) !important; color: var(--text) !important; }
+html[data-theme="light"] .card,
+html[data-theme="light"] .table,
+html[data-theme="light"] .input,
+html[data-theme="light"] .modal { background: var(--card) !important; border-color: var(--border) !important; }
+html[data-theme="light"] .table th,
+html[data-theme="light"] .table td { border-bottom:1px solid var(--border) !important; color: var(--text) !important; }
+html[data-theme="light"] .btn { background: var(--brand) !important; color: #fff !important; }
+html[data-theme="light"] a { color: var(--brand) !important; }
+
+.sidebar .brand img { height:28px; width:28px; border-radius:6px; }

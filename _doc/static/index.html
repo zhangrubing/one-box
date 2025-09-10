@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>📊 仪表盘 · 英智AI监控系统</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+<div class="app">
+  
+    <aside>
+      <div class="brand">
+        <div class="logo"></div>
+        <div><div class="t1">英智AI监控系统</div><div class="t2">OneBox • 单机版</div></div>
+      </div>
+      <nav class="nav"><div class="nav-sec">单机管理</div><a class="active" href="index.html">📊 仪表盘</a><a class="" href="hardware.html">🧩 硬件与系统</a><a class="" href="gpu.html">🖥️ GPU 详表</a><a class="" href="network.html">🌐 网络接口</a><a class="" href="storage.html">💾 存储与磁盘</a><a class="" href="logs.html">📜 日志查看</a><a class="" href="alerts.html">🚨 告警中心</a><a class="" href="operations.html">🧰 运维操作</a><a class="" href="settings.html">⚙️ 设置与基线</a><a class="" href="reports.html">🧷 报表与导出</a><a class="" href="users.html">👤 用户管理</a><a class="" href="audit.html">🛡️ 审计</a><a class="" href="about.html">ℹ️ 关于本机</a></nav>
+      <div style="padding:16px"><div class="tag">版本 v1.0 单机</div></div>
+    </aside>
+    
+  <div>
+    
+    <header class="top">
+      <div class="search">🔎 <input placeholder="搜索（页面内筛选）…" /><span class="tag">本机：online</span></div>
+      <div class="actions">
+        <label class="switch" title="明暗切换"><input id="theme" type="checkbox" checked onchange="toggleLight(this)"/><span class="slider"></span></label>
+        <button class="btn primary">一键巡检</button>
+      </div>
+    </header>
+    
+    <main>
+<section class="kpis">
+  <div class="kpi"><div class="label">CPU 使用率</div><div class="value">27%</div><div class="tag ok">正常</div></div>
+  <div class="kpi"><div class="label">内存占用</div><div class="value">43%</div><div class="tag">64 GB</div></div>
+  <div class="kpi"><div class="label">GPU 总体利用</div><div class="value">62%</div><div class="tag ok">8 × GPU</div></div>
+  <div class="kpi"><div class="label">告警（24h）</div><div class="value">5</div><div class="tag warn">处理中 2</div></div>
+</section>
+<section class="grid cols-3">
+  <div class="panel"><div class="hd"><div>GPU Util（近 24h）</div><div class="tag">均值 62%</div></div><div class="bd"><canvas id="c1"></canvas></div></div>
+  <div class="panel"><div class="hd"><div>温度/功耗</div><div class="tag">P95 75℃</div></div><div class="bd"><canvas id="c2"></canvas></div></div>
+  <div class="panel"><div class="hd"><div>磁盘 IO（MB/s）</div><div class="tag">P95 780</div></div><div class="bd"><canvas id="c3"></canvas></div></div>
+</section>
+<section class="grid cols-2">
+  <div class="panel">
+    <div class="hd"><div>最近严重告警</div><button class="btn" onclick="alert('已确认全部严重告警')">一键确认</button></div>
+    <div class="bd"><table><thead><tr><th>时间</th><th>对象</th><th>内容</th><th>级别</th><th>状态</th></tr></thead><tbody id="alarmTable"></tbody></table></div>
+  </div>
+  <div class="panel">
+    <div class="hd"><div>进程 Top（CPU）</div><div class="tag">采样 30s</div></div>
+    <div class="bd"><table><thead><tr><th>进程</th><th>PID</th><th>CPU%</th><th>内存</th></tr></thead><tbody id="procTable"></tbody></table></div>
+  </div>
+</section>
+</main>
+  </div>
+</div>
+<script src="assets/app.js"></script>
+<script>
+ready(()=>{
+  sparkline('c1', Array.from({length:48},()=>rand(35,95)), '#5b8cff');
+  sparkline('c2', Array.from({length:48},()=>rand(40,82)), '#6ae2ff');
+  sparkline('c3', Array.from({length:48},()=>rand(120,820)), '#38d39f');
+  const alarms=[
+    ['10:22','gpu0','温度 ≥ 85℃','严重','未确认'],
+    ['09:58','nvme2','SMART 异常','高','处理中'],
+    ['08:12','psu1','冗余失效','严重','未确认']
+  ].map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td><span class="tag err">${r[3]}</span></td><td>${r[4]}</td></tr>`).join('');
+  document.getElementById('alarmTable').innerHTML=alarms;
+  const procs = Array.from({length:8}, (_,i)=>['python', 1200+i, (80-i*7).toFixed(1), (2.3+i*.2).toFixed(1)+'G'])
+    .map(p=>`<tr><td>${p[0]}</td><td>${p[1]}</td><td>${p[2]}</td><td>${p[3]}</td></tr>`).join('');
+  document.getElementById('procTable').innerHTML=procs;
+});
+</script>
+</body>
+</html>

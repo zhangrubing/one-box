@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% set page_title="GPU详情" %}{% block content %}
+<div class="card"><div class="flex"><div class="section-title"><span>GPU 设备</span></div><div style="margin-left:auto"><button class="btn" id="refresh">刷新</button></div></div>
+<table class="table mt-3"><thead><tr><th>#</th><th>型号</th><th>驱动</th><th>显存</th><th>使用</th><th>温度</th><th>GPU%</th></tr></thead><tbody id="tb"></tbody></table>
+<canvas id="gpuChart" style="width:100%;height:180px" class="mt-4"></canvas>
+</div>
+<script type="module">
+import {apiGet,$} from "{{ url_for('static', path='assets/common.js') }}";
+import { MiniLine } from "{{ url_for('static', path='assets/chart.js') }}";
+const tb=$('#tb'); const line=new MiniLine(document.getElementById('gpuChart'),{max:180,yMin:0,yMax:100});
+async function load(){ const r=await apiGet('/api/system/gpu'); tb.innerHTML=(r.gpus||[]).map(g=>`<tr><td>${g.index}</td><td>${g.name}</td><td>${g.driver}</td><td>${g.mem_total} MB</td><td>${g.mem_used} MB</td><td>${g.temp??'-'}℃</td><td>${g.util??'-'}%</td></tr>`).join('')||'<tr><td colspan=7>未检测到 GPU</td></tr>'; if(r.gpus&&r.gpus[0]) line.push(Number(r.gpus[0].util||0)); }
+document.getElementById('refresh').onclick=load; setInterval(load, 2000); load();
+</script>
+{% endblock %}
