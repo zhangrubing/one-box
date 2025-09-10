@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% set page_title="存储与磁盘" %}{% block content %}
 <div class="card"><div class="flex"><div class="section-title"><span>磁盘设备（物理/逻辑）</span></div><div style="margin-left:auto"><button class="btn" id="refresh">刷新</button></div></div>
-<table class="table mt-3"><thead><tr><th>名称/路径</th><th>类型</th><th>大小</th><th>型号</th><th>序列号</th><th>旋转</th><th>总线</th><th>挂载点</th><th>文件系统</th></tr></thead><tbody id="devtb"></tbody></table>
+<table class="table mt-3"><thead><tr><th>名称/路径</th><th>类型</th><th>大小</th><th>型号</th><th>序列号</th><th>转速</th><th>总线</th><th>挂载点</th><th>文件系统</th></tr></thead><tbody id="devtb"></tbody></table>
 </div>
 <div class="card mt-4"><div class="section-title"><span>分区与挂载点</span></div>
 <table class="table mt-3"><thead><tr><th>设备</th><th>挂载点</th><th>文件系统</th><th>选项</th><th>已用</th><th>可用</th><th>总计</th><th>使用率</th></tr></thead><tbody id="parttb"></tbody></table>
