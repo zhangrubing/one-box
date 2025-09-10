@@ -1,6 +1,16 @@
 :root { --top-h: 56px; }
 html, body { margin:0 !important; padding:0 !important; }
-.container { gap:0 !important; }
+.container { gap:0 !important; width:100% !important; max-width:none !important; margin:0 !important; }
+/* Ensure the grid truly spans edge-to-edge and no default Tailwind .container centering applies */
+body > .container, html > body > .container { width:100% !important; max-width:none !important; margin-left:0 !important; margin-right:0 !important; }
+
+/* Responsive: when viewport is narrow, keep layout fluid */
+@media (max-width: 1024px){
+  :root { --sidebar-w: 220px; }
+}
+@media (max-width: 768px){
+  :root { --sidebar-w: 200px; }
+}
 .header { height: var(--top-h); min-height: var(--top-h); margin:0 !important; width:100% !important; }
 main { margin:0 !important; }
 .content > *:first-child { margin-top: 0; }

@@ -61,11 +61,29 @@ const cpuVal=$("#cpuVal"), memVal=$("#memVal"), cpuInfo=$("#cpuInfo"), memTotal=
 const sevAlerts=$("#sevAlerts"), procTop=$("#procTop");
 const cpuC=new MiniLine('cpuChart',{max:720,yMin:0,yMax:100,axes:true,ticks:[0,20,40,60,80,100]});
 const memC=new MiniLine('memChart',{max:720,yMin:0,yMax:100,axes:true,ticks:[0,20,40,60,80,100]});
-const diskC=new MiniLine('diskChart',{max:720,yMin:0,yMax:1000,axes:true,ticks:[0,200,400,600,800,1000]});
+const diskC=new MiniLine('diskChart',{max:720,yMin:0,yMax:50,axes:true,ticks:[0,10,20,30,40,50]});
 const gpuUtilC=new MiniLine('gpuUtilChart',{max:720,yMin:0,yMax:100,axes:true,ticks:[0,20,40,60,80,100]});
 const gpuTempC=new MiniLine('gpuTempChart',{max:720,yMin:0,yMax:100,axes:true,ticks:[0,20,40,60,80,100]});
 
 let range='5m';
+let lastAvgCpu=0, lastAvgMem=0, lastAvgDisk=0;
+
+function ticksFor(max){
+  const m = Math.max(10, Math.ceil(max));
+  let step = 10;
+  if (m <= 50) step = 10; else if (m <= 100) step = 20; else if (m <= 200) step = 50; else if (m <= 500) step = 100; else if (m <= 1000) step = 200; else step = 500;
+  const t = [];
+  for(let v=0; v<=m; v+=step) t.push(v);
+  if (t[t.length-1] !== m) t.push(m);
+  return t;
+}
+
+function setDiskScale(max){
+  const newMax = Math.min(Math.max(Math.ceil(max), 10), 5000);
+  diskC.setRange(0, newMax);
+  diskC.ticks = ticksFor(newMax);
+  diskC.draw();
+}
 function nowSec(){ return Math.floor(Date.now()/1000); }
 function rangeSince(){ return range==='24h'? nowSec()-24*3600 : (range==='1h'? nowSec()-3600 : nowSec()-300); }
 function xLabelsFor(){ if(range==='24h') return ['-24h','-12h','now']; if(range==='1h') return ['-60m','-30m','now']; return ['-5m','-2.5m','now']; }
@@ -83,7 +101,15 @@ function renderSnap(s){
   memVal.textContent = Number(memv).toFixed(0)+'%';
   memTotal.textContent = (s.mem.total/1073741824).toFixed(0)+' GB';
   cpuC.push(cpuv); memC.push(memv);
-  if(s.disk_mb_s!=null) diskC.push(s.disk_mb_s);
+  // show 当前 | 平均 for CPU/Mem
+  $('#avgCpu').textContent = `${Number(cpuv).toFixed(1)}% 当前 | ${(lastAvgCpu||0).toFixed(1)}% 平均`;
+  $('#avgMem').textContent = `${Number(memv).toFixed(1)}% 当前 | ${(lastAvgMem||0).toFixed(1)}% 平均`;
+  if(s.disk_mb_s!=null){
+    const v = Number(s.disk_mb_s)||0;
+    $('#avgDisk').textContent = `${v.toFixed(1)} MB/s 当前` + (lastAvgDisk?` | ${lastAvgDisk.toFixed(1)} MB/s 平均`:'');
+    diskC.push(v);
+    if(v > (diskC.yMax||50)*0.9){ setDiskScale(v*1.3); }
+  }
 }
 
 async function refreshGPU(){
@@ -127,12 +153,25 @@ async function loadHistory(){
   const r = await apiGet(`/api/reports/metrics?since=${since}&until=${until}`);
   let items = r.items||[]; items = decimate(items);
   cpuC.data=[]; memC.data=[]; diskC.data=[]; gpuUtilC.data=[]; gpuTempC.data=[];
-  items.forEach(it=>{ cpuC.push(it.cpu_percent||0); memC.push(it.mem_percent||0); diskC.push(it.disk_mb_s||0); gpuUtilC.push(it.gpu_util_avg||0); gpuTempC.push(it.gpu_temp_avg||0); });
+  let maxDisk=0;
+  items.forEach(it=>{ 
+    cpuC.push(it.cpu_percent||0); 
+    memC.push(it.mem_percent||0); 
+    const dv=Number(it.disk_mb_s||0); maxDisk=Math.max(maxDisk,dv); diskC.push(dv);
+    gpuUtilC.push(it.gpu_util_avg||0); gpuTempC.push(it.gpu_temp_avg||0); 
+  });
+  const targetMax = maxDisk>0 ? maxDisk*1.3 : 50;
+  setDiskScale(targetMax);
   const xl = (range==='24h')?['-24h','-12h','now'] : (range==='1h')?['-60m','-30m','now'] : ['-5m','-2.5m','now'];
   cpuC.setXLabels(xl); memC.setXLabels(xl); diskC.setXLabels(xl); gpuUtilC.setXLabels(xl); gpuTempC.setXLabels(xl);
-  $('#avgCpu').textContent = (r.summary.cpu_avg||0).toFixed(1)+'% 平均';
-  $('#avgMem').textContent = (r.summary.mem_avg||0).toFixed(1)+'% 平均';
-  $('#avgDisk').textContent = (r.summary.disk_avg||0).toFixed(1)+' MB/s 平均';
+  lastAvgCpu = Number(r.summary.cpu_avg||0);
+  lastAvgMem = Number(r.summary.mem_avg||0);
+  const lastCpu = cpuC.data.length ? (cpuC.data[cpuC.data.length-1].v||0) : 0;
+  const lastMem = memC.data.length ? (memC.data[memC.data.length-1].v||0) : 0;
+  $('#avgCpu').textContent = `${Number(lastCpu).toFixed(1)}% 当前 | ${lastAvgCpu.toFixed(1)}% 平均`;
+  $('#avgMem').textContent = `${Number(lastMem).toFixed(1)}% 当前 | ${lastAvgMem.toFixed(1)}% 平均`;
+  lastAvgDisk = Number(r.summary.disk_avg||0);
+  $('#avgDisk').textContent = lastAvgDisk.toFixed(1)+' MB/s 平均';
 }
 
 $('#rangeSeg').addEventListener('click', (e)=>{

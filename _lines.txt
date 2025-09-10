@@ -1,0 +1,189 @@
+0001: {% extends "base.html" %}{% set page_title="仪表�? %}{% block content %}
+0002: <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4" id="kpis">
+0003:   <div class="kpi card cpu">
+0004:     <div class="kpi-label">CPU 使用�?/div>
+0005:     <div class="kpi-value" id="cpuVal">-</div>
+0006:     <div class="kpi-pill"><span id="cpuInfo">-</span></div>
+0007:   </div>
+0008:   <div class="kpi card mem">
+0009:     <div class="kpi-label">内存占用</div>
+0010:     <div class="kpi-value" id="memVal">-</div>
+0011:     <div class="kpi-pill"><span id="memTotal">-</span></div>
+0012:   </div>
+0013:   <div class="kpi card gpu">
+0014:     <div class="kpi-label">GPU 总体利用</div>
+0015:     <div class="kpi-value" id="gpuVal">-</div>
+0016:     <div class="kpi-pill"><span id="gpuInfo">-</span></div>
+0017:   </div>
+0018:   <div class="kpi card alerts">
+0019:     <div class="kpi-label">告警�?4h�?/div>
+0020:     <div class="kpi-value" id="alertVal">-</div>
+0021:     <div class="kpi-pill"><span id="alertInfo">-</span></div>
+0022:   </div>
+0023: </div>
+0024: 
+0025: <div class="flex" style="gap:10px;align-items:center;margin-top:10px">
+0026:   <span class="small" style="color:var(--muted)">时间范围�?/span>
+0027:   <div class="seg" id="rangeSeg">
+0028:     <button data-r="5m" class="on">最�?分钟</button>
+0029:     <button data-r="1h">最�?小时</button>
+0030:     <button data-r="24h">最�?4小时</button>
+0031:   </div>
+0032: </div>
+0033: 
+0034: <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-2">
+0035:   <div class="card"><div class='section-title'><span>CPU 实时曲线 <span class='mini-avg' id='avgCpu'></span></span></div><canvas id='cpuChart' style='width:100%;height:220px'></canvas></div>
+0036:   <div class="card"><div class='section-title'><span>内存使用率曲�?<span class='mini-avg' id='avgMem'></span></span></div><canvas id='memChart' style='width:100%;height:220px'></canvas></div>
+0037:   <div class="card"><div class='section-title'><span>磁盘 IO（MB/s�?<span class='mini-avg' id='avgDisk'></span></span></div><canvas id='diskChart' style='width:100%;height:220px'></canvas></div>
+0038: </div>
+0039: 
+0040: <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+0041:   <div class="card"><div class='section-title'><span>GPU 利用率（平均�?/span></div><canvas id='gpuUtilChart' style='width:100%;height:220px'></canvas></div>
+0042:   <div class="card"><div class='section-title'><span>GPU 温度（平均）</span></div><canvas id='gpuTempChart' style='width:100%;height:220px'></canvas></div>
+0043: </div>
+0044: 
+0045: <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+0046:   <div class="card">
+0047:     <div class="section-title"><span>最近严重告�?/span></div>
+0048:     <table class="table"><thead><tr><th>ID</th><th>级别</th><th>标题</th><th>时间</th><th>状�?/th></tr></thead><tbody id="sevAlerts"></tbody></table>
+0049:   </div>
+0050:   <div class="card">
+0051:     <div class="section-title"><span>进程 TOP（CPU 30s 采样�?/span> <button class="btn" id="sampleTop" style="float:right">刷新采样</button></div>
+0052:     <div class="small">采样期间请稍候，请勿频繁点击</div>
+0053:     <table class="table"><thead><tr><th>PID</th><th>进程</th><th>用户</th><th>CPU%</th><th>内存</th></tr></thead><tbody id="procTop"></tbody></table>
+0054:   </div>
+0055: </div>
+0056: 
+0057: <script type="module">
+0058: import {mountSSE, apiGet, $, formatBytes} from "{{ url_for('static', path='assets/common.js') }}";
+0059: import { MiniLine } from "{{ url_for('static', path='assets/chart.js') }}";
+0060: const cpuVal=$("#cpuVal"), memVal=$("#memVal"), cpuInfo=$("#cpuInfo"), memTotal=$("#memTotal"), gpuVal=$("#gpuVal"), gpuInfo=$("#gpuInfo"), alertVal=$("#alertVal"), alertInfo=$("#alertInfo");
+0061: const sevAlerts=$("#sevAlerts"), procTop=$("#procTop");
+0062: const cpuC=new MiniLine('cpuChart',{max:720,yMin:0,yMax:100,axes:true,ticks:[0,20,40,60,80,100]});
+0063: const memC=new MiniLine('memChart',{max:720,yMin:0,yMax:100,axes:true,ticks:[0,20,40,60,80,100]});
+0064: const diskC=new MiniLine('diskChart',{max:720,yMin:0,yMax:50,axes:true,ticks:[0,10,20,30,40,50]});
+0065: const gpuUtilC=new MiniLine('gpuUtilChart',{max:720,yMin:0,yMax:100,axes:true,ticks:[0,20,40,60,80,100]});
+0066: const gpuTempC=new MiniLine('gpuTempChart',{max:720,yMin:0,yMax:100,axes:true,ticks:[0,20,40,60,80,100]});
+0067: 
+0068: let range='5m';
+0069: let lastAvgCpu=0, lastAvgMem=0, lastAvgDisk=0;
+0070: 
+0071: function ticksFor(max){
+0072:   const m = Math.max(10, Math.ceil(max));
+0073:   let step = 10;
+0074:   if (m <= 50) step = 10; else if (m <= 100) step = 20; else if (m <= 200) step = 50; else if (m <= 500) step = 100; else if (m <= 1000) step = 200; else step = 500;
+0075:   const t = [];
+0076:   for(let v=0; v<=m; v+=step) t.push(v);
+0077:   if (t[t.length-1] !== m) t.push(m);
+0078:   return t;
+0079: }
+0080: 
+0081: function setDiskScale(max){
+0082:   const newMax = Math.min(Math.max(Math.ceil(max), 10), 5000);
+0083:   diskC.setRange(0, newMax);
+0084:   diskC.ticks = ticksFor(newMax);
+0085:   diskC.draw();
+0086: }
+0087: function nowSec(){ return Math.floor(Date.now()/1000); }
+0088: function rangeSince(){ return range==='24h'? nowSec()-24*3600 : (range==='1h'? nowSec()-3600 : nowSec()-300); }
+0089: function xLabelsFor(){ if(range==='24h') return ['-24h','-12h','now']; if(range==='1h') return ['-60m','-30m','now']; return ['-5m','-2.5m','now']; }
+0090: function maxPoints(){ return 720; }
+0091: function decimate(arr){ const step=Math.ceil((arr.length||1)/maxPoints()); if(step<=1) return arr; const out=[]; for(let i=0;i<arr.length;i+=step) out.push(arr[i]); return out; }
+0092: 
+0093: async function loadCPUInfo(){
+0094:   try{ const r = await apiGet('/api/system/summary'); cpuInfo.textContent = (r.cpu.cores_physical||0) + ' �?/ ' + (r.cpu.cores_logical||0) + ' 线程'; }catch(e){ cpuInfo.textContent='-'; }
+0095: }
+0096: loadCPUInfo();
+0097: 
+0098: function renderSnap(s){
+0099:   const cpuv=s.cpu_percent||0; const memv=(100*(1-s.mem.available/s.mem.total));
+0100:   cpuVal.textContent = Number(cpuv).toFixed(0)+'%';
+0101:   memVal.textContent = Number(memv).toFixed(0)+'%';
+0102:   memTotal.textContent = (s.mem.total/1073741824).toFixed(0)+' GB';
+0103:   cpuC.push(cpuv); memC.push(memv);
+0104:   // show 当前 | 平均 for CPU/Mem
+0105:   $('#avgCpu').textContent = `${Number(cpuv).toFixed(1)}% 当前 | ${(lastAvgCpu||0).toFixed(1)}% 平均`;
+0106:   $('#avgMem').textContent = `${Number(memv).toFixed(1)}% 当前 | ${(lastAvgMem||0).toFixed(1)}% 平均`;
+0107:   if(s.disk_mb_s!=null){
+0108:     const v = Number(s.disk_mb_s)||0;
+0109:     $('#avgDisk').textContent = `${v.toFixed(1)} MB/s 当前` + (lastAvgDisk?` | ${lastAvgDisk.toFixed(1)} MB/s 平均`:'');
+0110:     diskC.push(v);
+0111:     if(v > (diskC.yMax||50)*0.9){ setDiskScale(v*1.3); }
+0112:   }
+0113: }
+0114: 
+0115: async function refreshGPU(){
+0116:   try{
+0117:     const g = await apiGet('/api/system/gpu');
+0118:     const gs = g.gpus||[];
+0119:     gpuInfo.textContent = (gs.length||0) + ' × GPU';
+0120:     if(gs.length){
+0121:       const util = gs.map(x=>Number(x.util||0)).filter(x=>!isNaN(x));
+0122:       const temp = gs.map(x=>Number(x.temp||0)).filter(x=>!isNaN(x));
+0123:       const avgUtil = util.length ? util.reduce((a,b)=>a+b,0)/util.length : 0;
+0124:       const avgTemp = temp.length ? temp.reduce((a,b)=>a+b,0)/temp.length : 0;
+0125:       gpuVal.textContent = Number(avgUtil).toFixed(0)+'%';
+0126:       gpuUtilC.push(avgUtil); gpuTempC.push(avgTemp);
+0127:     }else{ gpuVal.textContent='-'; }
+0128:   }catch(e){ gpuVal.textContent='-'; gpuInfo.textContent='-'; }
+0129: }
+0130: 
+0131: async function refreshAlerts(){
+0132:   try{
+0133:     const r = await apiGet('/api/alerts');
+0134:     const items = (r.items||[]).filter(x=>['CRITICAL','ERROR','SEVERE','FATAL'].includes(String(x.level||'').toUpperCase()));
+0135:     const now = Date.now();
+0136:     const within = items.filter(x=>{ const t=new Date((x.created_at||'').replace(' ','T')).getTime(); return !isNaN(t)&&(now-t)<=24*3600*1000; }).slice(0,10);
+0137:     sevAlerts.innerHTML = within.map(x=>`<tr><td>${x.id}</td><td>${x.level}</td><td>${x.title}</td><td>${x.created_at}</td><td>${x.acknowledged?'已确�?:'待处�?}</td></tr>`).join('') || '<tr><td colspan=5>暂无严重告警</td></tr>';
+0138:     const processing = within.filter(x=>!x.acknowledged).length;
+0139:     alertVal.textContent = within.length; alertInfo.textContent = processing?('处理�?'+processing):'无未确认';
+0140:   }catch(e){ sevAlerts.innerHTML = '<tr><td colspan=5>加载失败</td></tr>'; }
+0141: }
+0142: 
+0143: async function sampleProcessTop(){
+0144:   procTop.innerHTML = '<tr><td colspan=5>采样中（�?0s�?..</td></tr>';
+0145:   try{
+0146:     const r = await apiGet('/api/process/top?duration=30&limit=10');
+0147:     procTop.innerHTML = (r.items||[]).map(p=>`<tr><td>${p.pid}</td><td>${p.name}</td><td>${p.user||''}</td><td>${(p.cpu||0).toFixed(1)}</td><td>${formatBytes(p.mem_rss||0)}</td></tr>`).join('') || '<tr><td colspan=5>无数�?/td></tr>';
+0148:   }catch(e){ procTop.innerHTML = '<tr><td colspan=5>采样失败</td></tr>'; }
+0149: }
+0150: 
+0151: async function loadHistory(){
+0152:   const since = rangeSince(), until = nowSec();
+0153:   const r = await apiGet(`/api/reports/metrics?since=${since}&until=${until}`);
+0154:   let items = r.items||[]; items = decimate(items);
+0155:   cpuC.data=[]; memC.data=[]; diskC.data=[]; gpuUtilC.data=[]; gpuTempC.data=[];
+0156:   let maxDisk=0;
+0157:   items.forEach(it=>{ 
+0158:     cpuC.push(it.cpu_percent||0); 
+0159:     memC.push(it.mem_percent||0); 
+0160:     const dv=Number(it.disk_mb_s||0); maxDisk=Math.max(maxDisk,dv); diskC.push(dv);
+0161:     gpuUtilC.push(it.gpu_util_avg||0); gpuTempC.push(it.gpu_temp_avg||0); 
+0162:   });
+0163:   const targetMax = maxDisk>0 ? maxDisk*1.3 : 50;
+0164:   setDiskScale(targetMax);
+0165:   const xl = (range==='24h')?['-24h','-12h','now'] : (range==='1h')?['-60m','-30m','now'] : ['-5m','-2.5m','now'];
+0166:   cpuC.setXLabels(xl); memC.setXLabels(xl); diskC.setXLabels(xl); gpuUtilC.setXLabels(xl); gpuTempC.setXLabels(xl);
+0167:   lastAvgCpu = Number(r.summary.cpu_avg||0);
+0168:   lastAvgMem = Number(r.summary.mem_avg||0);
+0169:   const lastCpu = cpuC.data.length ? (cpuC.data[cpuC.data.length-1].v||0) : 0;
+0170:   const lastMem = memC.data.length ? (memC.data[memC.data.length-1].v||0) : 0;
+0171:   $('#avgCpu').textContent = `${Number(lastCpu).toFixed(1)}% 当前 | ${lastAvgCpu.toFixed(1)}% 平均`;
+0172:   $('#avgMem').textContent = `${Number(lastMem).toFixed(1)}% 当前 | ${lastAvgMem.toFixed(1)}% 平均`;
+0173:   lastAvgDisk = Number(r.summary.disk_avg||0);
+0174:   $('#avgDisk').textContent = lastAvgDisk.toFixed(1)+' MB/s 平均';
+0175: }
+0176: 
+0177: $('#rangeSeg').addEventListener('click', (e)=>{
+0178:   const b = e.target.closest('button'); if(!b) return;
+0179:   $('#rangeSeg').querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+0180:   range = b.dataset.r; loadHistory();
+0181: });
+0182: 
+0183: mountSSE('/sse/metrics', (d,e)=>{ if(e.type==='metrics') renderSnap(d); });
+0184: refreshGPU(); setInterval(refreshGPU, 3000);
+0185: refreshAlerts(); setInterval(refreshAlerts, 10000);
+0186: sampleProcessTop();
+0187: loadHistory();
+0188: </script>
+0189: {% endblock %}
