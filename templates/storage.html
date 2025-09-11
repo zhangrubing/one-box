@@ -7,7 +7,7 @@
   <table class="table mt-3">
     <thead>
       <tr>
-        <th>名称/路径</th><th>类型</th><th>大小</th><th>型号</th><th>序列号</th><th>介质</th><th>总线</th><th>挂载点</th><th>文件系统</th>
+        <th>名称/路径</th><th>类型</th><th>大小</th><th>型号</th><th>序列号</th><th>总线</th><th>挂载点</th><th>文件系统</th>
         <th>读(MB/s)</th><th>写(MB/s)</th><th>占用</th><th>队列</th>
       </tr>
     </thead>
@@ -19,7 +19,7 @@
   <div class="section-title"><span>分区与挂载点</span></div>
   <table class="table mt-3">
     <thead>
-      <tr><th>设备</th><th>挂载点</th><th>文件系统</th><th>选项</th><th>已用</th><th>可用</th><th>总计</th><th>使用率</th></tr>
+      <tr><th>设备</th><th>挂载点</th><th>文件系统</th><th>已用</th><th>可用</th><th>总计</th><th>使用率</th></tr>
     </thead>
     <tbody id="parttb"></tbody>
   </table>
@@ -38,7 +38,7 @@ async function load(){
       <td>${val(d.size)}</td>
       <td>${val(d.model)}</td>
       <td>${val(d.serial)}</td>
-      <td>${d.rota===0?'SSD':(d.rota===1?'HDD':'-')}</td>
+      
       <td>${val(d.tran)}</td>
       <td>${val(d.mountpoint)}</td>
       <td>${val(d.fstype)}</td>
@@ -46,9 +46,9 @@ async function load(){
       <td>${(d.wmbs!=null)?d.wmbs.toFixed(1):'-'}</td>
       <td>${(d.util_pct!=null)?d.util_pct.toFixed(1)+'%':'-'}</td>
       <td>${(d.queue!=null)?d.queue:'-'}</td>
-    </tr>`).join('') || '<tr><td colspan=13>未获取到设备（可能权限限制）</td></tr>';
+    </tr>`).join('') || '<tr><td colspan=12>未获取到设备（可能权限限制）</td></tr>';
   parttb.innerHTML = (r.partitions||[]).map(p=>`<tr>
-      <td>${p.device}</td><td>${p.mountpoint}</td><td>${p.fstype}</td><td>${p.opts}</td>
+      <td>${p.device}</td><td>${p.mountpoint}</td><td>${p.fstype}</td>
       <td>${formatBytes(p.used)}</td><td>${formatBytes(p.free)}</td><td>${formatBytes(p.total)}</td>
       <td>${(p.percent??0).toFixed(1)}%</td>
     </tr>`).join('');
@@ -62,3 +62,4 @@ btn.addEventListener('click', ()=>{ autoOn = !autoOn; if(autoOn) schedule(); els
 load().then(()=>{ schedule(); });
 </script>
 {% endblock %}
+

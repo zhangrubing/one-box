@@ -1,4 +1,4 @@
-﻿import asyncio, json, os, time, sqlite3, subprocess, shutil, csv, io, platform, re
+import asyncio, json, os, time, sqlite3, subprocess, shutil, csv, io, platform, re
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 import aiosqlite, psutil
@@ -14,6 +14,13 @@ APP_SECRET = os.environ.get("APP_SECRET", "change-this-secret")
 APP_ENV = os.environ.get("APP_ENV", "v1.0")
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "app.db"
+
+EXCLUDED_MOUNT_PREFIXES = [
+    '/snap/', '/var/snap/', '/var/lib/snapd/', '/run/snapd/',
+    '/var/lib/docker/', '/var/lib/containers/', '/var/lib/containerd/',
+    '/var/lib/kubelet/', '/var/lib/flatpak/', '/run/user/',
+    '/var/lib/lxc/', '/var/lib/lxd/', '/var/lib/libvirt/', '/var/lib/podman/'
+]
 
 app = FastAPI(title="一体机监控系统")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
@@ -443,7 +450,12 @@ def storage_detail() -> Dict[str, Any]:
             for l in lines:
                 parts = l.split(",")
                 if len(parts)>=6:
-                    detail["devices"].append({"name":parts[1],"path":parts[1],"type":"disk","size":parts[4],"model":parts[2],"serial":parts[3],"tran":parts[5]})
+                    import re as _re
+                    _name = parts[1]
+                    m = _re.search(r"PHYSICALDRIVE(\d+)", _name, _re.I)
+                    idx = int(m.group(1)) if m else None
+                    kname = (f"PhysicalDrive{idx}" if idx is not None else None)
+                    detail["devices"].append({"name":_name,"path":_name,"type":"disk","size":parts[4],"model":parts[2],"serial":parts[3],"tran":parts[5],"kname":kname,"pindex":idx})
         except Exception as e:
             detail["devices_error"] = str(e)
     
@@ -462,6 +474,14 @@ def storage_detail() -> Dict[str, Any]:
             # Build candidate keys for psutil perdisk mapping
             cands = []
             for nm in filter(None, [kname, name, os.path.basename(str(d.get('path') or '')), pkname]):
+                # Windows mapping: from \.\PHYSICALDRIVEX derive PhysicalDriveX/PHYSICALDRIVEX
+                if nm.startswith('\\.\\') and 'PHYSICALDRIVE' in nm.upper():
+                    m = re.search(r'PHYSICALDRIVE(\d+)', nm, re.I)
+                    if m:
+                        cand = f'PhysicalDrive{m.group(1)}'
+                        cands.append(cand)
+                        cands.append(cand.upper())
+                        cands.append(nm)
                 x = nm
                 if x.startswith('nvme'):
                     x = re.sub(r'p\d+$','', x)
@@ -482,7 +502,7 @@ def storage_detail() -> Dict[str, Any]:
                 stat_name = re.sub(r'p\d+$','', stat_name)
             else:
                 stat_name = re.sub(r'\d+$','', stat_name)
-            q = _linux_block_inflight(stat_name)
+            q = _linux_block_inflight(stat_name) if platform.system() == 'Linux' else -1
             # compute deltas
             io = perdisk.get(devkey)
             rMB, wMB, util = None, None, None
@@ -493,7 +513,11 @@ def storage_detail() -> Dict[str, Any]:
                     dt = max(0.001, now_t - prev[-1])
                     rMB = (cur[0]-prev[0]) / dt / (1024*1024)
                     wMB = (cur[1]-prev[1]) / dt / (1024*1024)
-                    busy = (cur[2]-prev[2]) / 1000.0  # ms -> s
+                    # prefer busy_time; fall back to sum of read_time+write_time if busy_time not provided
+                    busy_ms = (cur[2]-prev[2])
+                    if busy_ms <= 0:
+                        busy_ms = (cur[3]-prev[3]) + (cur[4]-prev[4])
+                    busy = busy_ms / 1000.0
                     util = max(0.0, min(100.0, busy/dt*100.0))
                 PREV_DISK_PERDISK[devkey] = (*cur, now_t)
             d['rmbs'] = rMB
@@ -506,6 +530,14 @@ def storage_detail() -> Dict[str, Any]:
     for p in psutil.disk_partitions(all=True):
         if platform.system() == "Linux":
             dev = str(p.device or "")
+            mp = str(p.mountpoint or "")
+            # filter well-known sandbox/container bind mounts
+            try:
+                _mp = mp if mp.endswith('/') else mp + '/'
+                if any(_mp.startswith(pref) for pref in EXCLUDED_MOUNT_PREFIXES):
+                    continue
+            except Exception:
+                pass
             if not dev.startswith("/dev/") or dev.startswith("/dev/loop") or os.path.basename(dev).startswith("loop"):
                 continue
         try:
@@ -662,4 +694,5 @@ async def sse_metrics(request: Request, user: dict = Depends(require_user)):
             yield await sse_event(snap, event="metrics")
             await asyncio.sleep(1.0)
     return StreamingResponse(event_gen(), media_type="text/event-stream")
+
 
