@@ -397,7 +397,7 @@ def storage_detail() -> Dict[str, Any]:
     # Best-effort physical devices
     if platform.system() == "Linux" and shutil.which("lsblk"):
         try:
-            out = subprocess.check_output(["lsblk","-J","-o","NAME,PATH,TYPE,SIZE,MODEL,SERIAL,ROTA,TRAN,MOUNTPOINT,FSTYPE"], timeout=3).decode()
+            out = subprocess.check_output(["lsblk","-J","-o","NAME,PATH,TYPE,SIZE,MODEL,SERIAL,ROTA,TRAN,MOUNTPOINT,FSTYPE,KNAME,PKNAME"], timeout=3).decode()
             data = json.loads(out)
             def walk(node):
                 # Ubuntu 22.04's lsblk -J outputs lowercase keys (e.g. "name").
@@ -420,6 +420,8 @@ def storage_detail() -> Dict[str, Any]:
                     "tran": g("TRAN"),
                     "mountpoint": g("MOUNTPOINT"),
                     "fstype": g("FSTYPE"),
+                    "kname": g("KNAME"),
+                    "pkname": g("PKNAME"),
                 }
                                 # filter out loop devices (snap loop mounts)
                 _tp = str(item.get("type") or "").lower()
@@ -455,19 +457,37 @@ def storage_detail() -> Dict[str, Any]:
             # only physical disks, not loop
             typ = str(d.get("type") or "").lower()
             name = d.get("name") or os.path.basename(str(d.get("path") or ""))
-            base = name
-            if base.startswith('nvme'):
-                import re as _re
-                base = _re.sub(r'p\d+$','', base)
+            kname = d.get("kname") or name
+            pkname = d.get("pkname") or None
+            # Build candidate keys for psutil perdisk mapping
+            cands = []
+            for nm in filter(None, [kname, name, os.path.basename(str(d.get('path') or '')), pkname]):
+                x = nm
+                if x.startswith('nvme'):
+                    x = re.sub(r'p\d+$','', x)
+                else:
+                    x = re.sub(r'\d+$','', x)
+                cands.extend(list(dict.fromkeys([nm, x])))
+            # choose a key that exists in psutil mapping
+            devkey = None
+            for key in cands:
+                if key in perdisk:
+                    devkey = key
+                    break
+            if devkey is None:
+                devkey = cands[0] if cands else kname
+            # queue depth from /sys/block/*/stat using normalized kernel name
+            stat_name = devkey
+            if stat_name.startswith('nvme'):
+                stat_name = re.sub(r'p\d+$','', stat_name)
             else:
-                import re as _re
-                base = _re.sub(r'\d+$','', base)
-            # queue depth from /sys/block/*/stat
-            q = _linux_block_inflight(base)
-            io = perdisk.get(base)
+                stat_name = re.sub(r'\d+$','', stat_name)
+            q = _linux_block_inflight(stat_name)
+            # compute deltas
+            io = perdisk.get(devkey)
             rMB, wMB, util = None, None, None
             if io is not None:
-                prev = PREV_DISK_PERDISK.get(base)
+                prev = PREV_DISK_PERDISK.get(devkey)
                 cur = (io.read_bytes, io.write_bytes, getattr(io, 'busy_time', 0), getattr(io, 'read_time', 0), getattr(io, 'write_time', 0))
                 if prev:
                     dt = max(0.001, now_t - prev[-1])
@@ -475,14 +495,11 @@ def storage_detail() -> Dict[str, Any]:
                     wMB = (cur[1]-prev[1]) / dt / (1024*1024)
                     busy = (cur[2]-prev[2]) / 1000.0  # ms -> s
                     util = max(0.0, min(100.0, busy/dt*100.0))
-                PREV_DISK_PERDISK[base] = (*cur, now_t)
+                PREV_DISK_PERDISK[devkey] = (*cur, now_t)
             d['rmbs'] = rMB
             d['wmbs'] = wMB
             d['util_pct'] = util
             d['queue'] = q if q >= 0 else None
-            # SMART only for top-level disks
-            if typ == 'disk' and str(d.get('path') or '').startswith('/dev/'):
-                d.update({k:v for k,v in _smart_info(str(d.get('path'))).items()})
     except Exception:
         pass
 # partitions
