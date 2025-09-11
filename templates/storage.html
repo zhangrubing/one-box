@@ -30,6 +30,6 @@ async function load(){
   </tr>`).join('')||'<tr><td colspan=15>未获取到设备（可能权限限制）</td></tr>';
   parttb.innerHTML=(r.partitions||[]).map(p=>`<tr><td>${p.device}</td><td>${p.mountpoint}</td><td>${p.fstype}</td><td>${p.opts}</td><td>${formatBytes(p.used)}</td><td>${formatBytes(p.free)}</td><td>${formatBytes(p.total)}</td><td>${(p.percent??0).toFixed(1)}%</td></tr>`).join('');
 }
-document.getElementById('refresh').onclick=load; load();
-</script>
+document.getElementById('refresh').onclick=load; load();\nlet _autoref=true; let _tm=null; function tick(){ if(!_autoref) return; clearTimeout(_tm); _tm=setTimeout(async()=>{ try{ await load(); } finally { tick(); } }, 2000); } tick();\n// 简单开关按钮\nconst btn=document.getElementById('refresh'); btn.textContent='刷新/自动'; btn.onclick=()=>{ _autoref=!_autoref; if(_autoref){ tick(); } else { clearTimeout(_tm); } };\n</script>
 {% endblock %}
+
