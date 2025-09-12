@@ -48,6 +48,18 @@ CREATE TABLE IF NOT EXISTS metric_samples (
   mem_total INTEGER,
   processes INTEGER
 );
+CREATE TABLE IF NOT EXISTS net_samples (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  iface TEXT NOT NULL,
+  rx_bytes INTEGER,
+  tx_bytes INTEGER,
+  errin INTEGER,
+  errout INTEGER,
+  rx_kbps REAL,
+  tx_kbps REAL,
+  latency_ms REAL
+);
 '''
 
 
@@ -80,4 +92,3 @@ async def init_db():
                 ("admin", hash_password("admin123"))
             )
         await db.commit()
-

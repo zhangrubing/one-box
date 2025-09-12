@@ -151,26 +151,48 @@ async function sampleProcessTop(){
 async function loadHistory(){
   const since = rangeSince(), until = nowSec();
   const r = await apiGet(`/api/reports/metrics?since=${since}&until=${until}`);
-  let items = r.items||[]; items = decimate(items);
-  cpuC.data=[]; memC.data=[]; diskC.data=[]; gpuUtilC.data=[]; gpuTempC.data=[];
-  let maxDisk=0;
-  items.forEach(it=>{ 
-    cpuC.push(it.cpu_percent||0); 
-    memC.push(it.mem_percent||0); 
-    const dv=Number(it.disk_mb_s||0); maxDisk=Math.max(maxDisk,dv); diskC.push(dv);
-    gpuUtilC.push(it.gpu_util_avg||0); gpuTempC.push(it.gpu_temp_avg||0); 
+  const raw = r.items||[];
+  // minute bucket with zero-fill
+  const minutes = (range==='24h')? 1440 : ((range==='1h')?60:5);
+  const endMinTs = Math.floor(until/60)*60;
+  const startMinTs = endMinTs - (minutes-1)*60;
+  const buckets = new Map(); // mt -> {cpu, mem, disk, gpuU, gpuT, n}
+  raw.forEach(it=>{
+    const ts = Number(it.ts||0); const mt = Math.floor(ts/60)*60;
+    if (mt < startMinTs || mt > endMinTs) return;
+    const b = buckets.get(mt) || {cpu:0, mem:0, disk:0, gpuU:0, gpuT:0, n:0};
+    b.cpu += Number(it.cpu_percent||0);
+    b.mem += Number(it.mem_percent||0);
+    b.disk += Number(it.disk_mb_s||0);
+    b.gpuU += Number(it.gpu_util_avg||0);
+    b.gpuT += Number(it.gpu_temp_avg||0);
+    b.n += 1;
+    buckets.set(mt,b);
   });
+  cpuC.data=[]; memC.data=[]; diskC.data=[]; gpuUtilC.data=[]; gpuTempC.data=[];
+  let maxDisk=0, sumCpu=0, sumMem=0, sumDisk=0, cnt=0;
+  for (let t=startMinTs; t<=endMinTs; t+=60){
+    const b = buckets.get(t);
+    const cpu = b? (b.cpu/Math.max(1,b.n)) : 0;
+    const mem = b? (b.mem/Math.max(1,b.n)) : 0;
+    const dsk = b? (b.disk/Math.max(1,b.n)) : 0;
+    const gu = b? (b.gpuU/Math.max(1,b.n)) : 0;
+    const gt = b? (b.gpuT/Math.max(1,b.n)) : 0;
+    cpuC.push(cpu); memC.push(mem); diskC.push(dsk); gpuUtilC.push(gu); gpuTempC.push(gt);
+    maxDisk = Math.max(maxDisk, dsk);
+    sumCpu += cpu; sumMem += mem; sumDisk += dsk; cnt++;
+  }
   const targetMax = maxDisk>0 ? maxDisk*1.3 : 50;
   setDiskScale(targetMax);
   const xl = (range==='24h')?['-24h','-12h','now'] : (range==='1h')?['-60m','-30m','now'] : ['-5m','-2.5m','now'];
   cpuC.setXLabels(xl); memC.setXLabels(xl); diskC.setXLabels(xl); gpuUtilC.setXLabels(xl); gpuTempC.setXLabels(xl);
-  lastAvgCpu = Number(r.summary.cpu_avg||0);
-  lastAvgMem = Number(r.summary.mem_avg||0);
+  lastAvgCpu = cnt? (sumCpu/cnt) : 0;
+  lastAvgMem = cnt? (sumMem/cnt) : 0;
   const lastCpu = cpuC.data.length ? (cpuC.data[cpuC.data.length-1].v||0) : 0;
   const lastMem = memC.data.length ? (memC.data[memC.data.length-1].v||0) : 0;
   $('#avgCpu').textContent = `${Number(lastCpu).toFixed(1)}% 当前 | ${lastAvgCpu.toFixed(1)}% 平均`;
   $('#avgMem').textContent = `${Number(lastMem).toFixed(1)}% 当前 | ${lastAvgMem.toFixed(1)}% 平均`;
-  lastAvgDisk = Number(r.summary.disk_avg||0);
+  lastAvgDisk = cnt? (sumDisk/cnt) : 0;
   $('#avgDisk').textContent = lastAvgDisk.toFixed(1)+' MB/s 平均';
 }
 

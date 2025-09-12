@@ -21,6 +21,7 @@ from .routers import operations as r_ops
 from .routers import audit as r_audit
 from .routers import about as r_about
 from .utils.system import collect_system_snapshot
+from .utils.system import collect_network_rates
 
 
 app = FastAPI(title="一体机监控系统")
@@ -54,6 +55,37 @@ async def _sampler():
                     ),
                 )
                 await db.commit()
+            # network per-nic sampling
+            try:
+                net = collect_network_rates()
+                ts = int(time.time())
+                async with aiosqlite.connect(DB_PATH) as db:
+                    for name, item in (net.get("ifaces") or {}).items():
+                        await db.execute(
+                            "INSERT INTO net_samples(ts,iface,rx_bytes,tx_bytes,errin,errout,rx_kbps,tx_kbps,latency_ms) VALUES(?,?,?,?,?,?,?,?,?)",
+                            (
+                                ts, name,
+                                int(item.get("rx_bytes") or 0), int(item.get("tx_bytes") or 0),
+                                int(item.get("errin") or 0), int(item.get("errout") or 0),
+                                float(item.get("rx_kbps") or 0.0), float(item.get("tx_kbps") or 0.0),
+                                None,
+                            ),
+                        )
+                    # total row with latency
+                    tot = net.get("total") or {}
+                    await db.execute(
+                        "INSERT INTO net_samples(ts,iface,rx_bytes,tx_bytes,errin,errout,rx_kbps,tx_kbps,latency_ms) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (
+                            ts, "__total__",
+                            None, None,
+                            int(tot.get("errin") or 0), int(tot.get("errout") or 0),
+                            float(tot.get("rx_kbps") or 0.0), float(tot.get("tx_kbps") or 0.0),
+                            (net.get("latency_ms") if isinstance(net.get("latency_ms"), (int,float)) else None),
+                        ),
+                    )
+                    await db.commit()
+            except Exception:
+                pass
         except Exception:
             pass
         await asyncio.sleep(interval)

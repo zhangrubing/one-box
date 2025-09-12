@@ -6,6 +6,7 @@ from ..config import EXCLUDED_MOUNT_PREFIXES
 
 PREV_DISK_IO = None
 PREV_DISK_PERDISK: Dict[str, Any] = {}
+PREV_NET_PERNIC: Dict[str, Any] = {}
 GPU_PRESENT: Optional[bool] = None
 
 
@@ -90,7 +91,7 @@ def collect_system_snapshot() -> Dict[str, Any]:
             usage = None
         disks.append({"device": p.device, "mountpoint": p.mountpoint, "fstype": p.fstype, "usage": usage})
     net = psutil.net_io_counters(pernic=True)
-    net2 = {k: {"bytes_sent": v.bytes_sent, "bytes_recv": v.bytes_recv, "packets_sent": v.packets_sent, "packets_recv": v.packets_recv} for k,v in net.items()}
+    net2 = {k: {"bytes_sent": v.bytes_sent, "bytes_recv": v.bytes_recv, "packets_sent": v.packets_sent, "packets_recv": v.packets_recv, "errin": getattr(v,'errin',0), "errout": getattr(v,'errout',0)} for k,v in net.items()}
     boot = psutil.boot_time(); procs = len(psutil.pids())
 
     # disk io MB/s
@@ -134,6 +135,138 @@ def collect_system_snapshot() -> Dict[str, Any]:
         "gpu_util_avg": gpu_util_avg,
         "gpu_temp_avg": gpu_temp_avg
     }
+
+
+def measure_latency_ms(host: Optional[str] = None, timeout: float = 1.0) -> Optional[float]:
+    """Best-effort latency measurement to a host. Tries ping, then TCP connect.
+    Returns milliseconds or None if unavailable.
+    """
+    host = host or os.environ.get("NET_PING_HOST", "1.1.1.1")
+    try:
+        if shutil.which("ping"):
+            import platform as _pf
+            if _pf.system() == "Windows":
+                # ping -n 1 -w 1000 host
+                out = subprocess.check_output(["ping","-n","1","-w",str(int(timeout*1000)), host], timeout=timeout+1).decode(errors="ignore")
+            else:
+                # ping -c 1 -W 1 host
+                out = subprocess.check_output(["ping","-c","1","-W",str(int(timeout)), host], timeout=timeout+1).decode(errors="ignore")
+            # parse time=xx ms
+            import re as _re
+            m = _re.search(r"time[=<]\s*([0-9]+\.?[0-9]*)\s*ms", out)
+            if m:
+                return float(m.group(1))
+        # fallback: TCP connect
+        import socket, time as _t
+        start = _t.perf_counter()
+        try:
+            with socket.create_connection((host, 80), timeout=timeout):
+                pass
+            return ( _t.perf_counter() - start ) * 1000.0
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+
+def collect_network_rates() -> Dict[str, Any]:
+    """Compute per-interface rx/tx rates (KB/s) and expose cumulative counters, plus overall aggregate.
+    Uses global PREV_NET_PERNIC to compute deltas.
+    """
+    out: Dict[str, Any] = {"ifaces": {}, "total": {"rx_kbps": 0.0, "tx_kbps": 0.0, "errin": 0, "errout": 0}}
+    try:
+        stats = psutil.net_io_counters(pernic=True) or {}
+        now_t = time.time()
+        global PREV_NET_PERNIC
+        total_rx_kbps = 0.0
+        total_tx_kbps = 0.0
+        total_errin = 0
+        total_errout = 0
+        for name, v in stats.items():
+            rx = int(getattr(v, 'bytes_recv', 0)); tx = int(getattr(v, 'bytes_sent', 0))
+            errin = int(getattr(v, 'errin', 0)); errout = int(getattr(v, 'errout', 0))
+            prev = PREV_NET_PERNIC.get(name)
+            rx_kbps = tx_kbps = 0.0
+            if prev:
+                dt = max(0.001, now_t - prev[2])
+                rx_kbps = max(0.0, (rx - prev[0]) / dt / 1024.0)
+                tx_kbps = max(0.0, (tx - prev[1]) / dt / 1024.0)
+            PREV_NET_PERNIC[name] = (rx, tx, now_t, errin, errout)
+            out["ifaces"][name] = {
+                "rx_bytes": rx, "tx_bytes": tx,
+                "errin": errin, "errout": errout,
+                "rx_kbps": rx_kbps, "tx_kbps": tx_kbps,
+            }
+            total_rx_kbps += rx_kbps
+            total_tx_kbps += tx_kbps
+            total_errin += errin
+            total_errout += errout
+        out["total"].update({"rx_kbps": total_rx_kbps, "tx_kbps": total_tx_kbps, "errin": total_errin, "errout": total_errout})
+        out["latency_ms"] = measure_latency_ms()
+    except Exception:
+        pass
+    return out
+
+
+def detect_primary_interface() -> Optional[str]:
+    """Best-effort detection of the primary/default route interface name.
+    Returns interface name or None if undetermined.
+    """
+    try:
+        import platform as _pf
+        sys = _pf.system()
+        if sys == "Linux" and shutil.which("ip"):
+            try:
+                out = subprocess.check_output(["ip","route","get","1.1.1.1"], timeout=1.5).decode(errors="ignore")
+                # format: '1.1.1.1 via 192.168.1.1 dev eth0 src 192.168.1.100 ...'
+                import re as _re
+                m = _re.search(r"\bdev\s+(\S+)", out)
+                if m:
+                    return m.group(1)
+            except Exception:
+                # fallback
+                try:
+                    out = subprocess.check_output(["ip","route","show","default"], timeout=1.5).decode(errors="ignore")
+                    # default via 192.168.1.1 dev eth0
+                    import re as _re
+                    m = _re.search(r"\bdev\s+(\S+)", out)
+                    if m:
+                        return m.group(1)
+                except Exception:
+                    pass
+        elif sys == "Windows":
+            try:
+                out = subprocess.check_output(["route","print","-4"], timeout=2.0).decode(errors="ignore")
+                # Find the default route row (0.0.0.0         0.0.0.0    GATEWAY    INTERFACE IP)
+                lines = [l.strip() for l in out.splitlines() if l.strip()]
+                df_line = None
+                for ln in lines:
+                    if ln.startswith("0.0.0.0"):
+                        # columns are spaced; last column is interface IP
+                        parts = [p for p in ln.split() if p]
+                        if len(parts) >= 4:
+                            iface_ip = parts[-1]
+                            # match this IP to a NIC address
+                            for name, addrs in psutil.net_if_addrs().items():
+                                for a in addrs:
+                                    if str(a.address) == iface_ip:
+                                        return name
+                        df_line = ln
+                        break
+            except Exception:
+                pass
+        elif sys == "Darwin" and shutil.which("route"):
+            try:
+                out = subprocess.check_output(["route","-n","get","default"], timeout=1.5).decode(errors="ignore")
+                for ln in out.splitlines():
+                    ln = ln.strip()
+                    if ln.lower().startswith("interface:"):
+                        return ln.split(":",1)[1].strip()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return None
 
 
 def storage_detail() -> Dict[str, Any]:
@@ -200,4 +333,3 @@ def storage_detail() -> Dict[str, Any]:
         except Exception:
             detail["partitions"].append({"device": p.device, "mountpoint": p.mountpoint, "fstype": p.fstype, "opts": p.opts, "total": None, "used": None, "free": None, "percent": None})
     return detail
-
