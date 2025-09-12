@@ -77,6 +77,15 @@ async def ensure_column(db, table: str, col: str, decl: str):
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(SCHEMA_SQL)
+        # indexes for time-range queries
+        try:
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_metric_samples_ts ON metric_samples(ts)")
+        except Exception:
+            pass
+        try:
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_net_samples_iface_ts ON net_samples(iface, ts)")
+        except Exception:
+            pass
         # new columns for metrics
         await ensure_column(db, "metric_samples", "mem_percent", "REAL")
         await ensure_column(db, "metric_samples", "disk_mb_s", "REAL")

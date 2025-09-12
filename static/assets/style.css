@@ -142,32 +142,23 @@ html[data-theme="light"] .nav a.m-about    { --weak: rgba(124,58,237,.12); --out
 
 
 /* ===== KPI Cards ===== */
-.kpi{ position:relative; overflow:hidden; border-radius:14px; padding:14px; background:
-  linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,.02)),
-  var(--card);
-}
-.kpi::after{ /* subtle inner vignette */ content:""; position:absolute; inset:0; border-radius:14px; pointer-events:none;
-  box-shadow: inset 0 -36px 72px rgba(0,0,0,.06);
-}
+.kpi{ position:relative; overflow:hidden; border-radius:14px; padding:14px; background: transparent; }
+.kpi::after{ content:""; position:absolute; inset:0; border-radius:14px; pointer-events:none; box-shadow: none; }
 .kpi-label{ color:var(--muted); font-size:13px; }
 .kpi-value{ font-size:32px; font-weight:800; margin-top:6px; letter-spacing:.4px; }
 .kpi-pill{ margin-top:12px; background:rgba(255,255,255,.04); border:1px solid var(--border); border-radius:999px; height:32px; display:flex; align-items:center; padding:0 14px; color:var(--muted) }
 .kpi-pill .ok{ color: var(--ok); }
 .kpi-pill .warn{ color: var(--warn); }
 .kpi-pill .danger{ color: var(--danger); }
-html[data-theme="light"] .kpi{ background:
-  linear-gradient(180deg, rgba(255,255,255,.85), rgba(255,255,255,.62)),
-  var(--card);
-}
-html[data-theme="light"] .kpi::after{ box-shadow: inset 0 0 0 1px rgba(0,0,0,.06), inset 0 -40px 80px rgba(0,0,0,.03); }
+html[data-theme="light"] .kpi{ background: transparent; }
+html[data-theme="light"] .kpi::after{ box-shadow: none; }
 
 
 /* KPI */
-.kpi.card{border:1px solid var(--border);border-radius:14px;padding:14px;background:
-  linear-gradient(180deg, rgba(255,255,255,.04), rgba(0,0,0,.02)),var(--card);}
-.kpi::after{content:"";position:absolute;inset:0;border-radius:14px;pointer-events:none;box-shadow: inset 0 -28px 56px rgba(0,0,0,.05);}
-html[data-theme="light"] .kpi{background:linear-gradient(180deg, rgba(255,255,255,.85), rgba(255,255,255,.62)),var(--card);}
-html[data-theme="light"] .kpi::after{box-shadow: inset 0 -28px 56px rgba(0,0,0,.03);}
+.kpi.card{ border:1px solid transparent; border-radius:14px; padding:14px; background: transparent; }
+.kpi::after{ content:""; position:absolute; inset:0; border-radius:14px; pointer-events:none; box-shadow: none; }
+html[data-theme="light"] .kpi{ background: transparent; }
+html[data-theme="light"] .kpi::after{ box-shadow: none; }
 .kpi-label{color:var(--muted);font-size:13px}
 .kpi-value{font-size:32px;font-weight:800;margin-top:6px;letter-spacing:.4px}
 .kpi-pill{margin-top:12px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:999px;height:32px;display:flex;align-items:center;padding:0 14px;color:var(--muted)}

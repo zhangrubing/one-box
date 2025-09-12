@@ -1,5 +1,7 @@
 import asyncio
 from fastapi import APIRouter, Depends, Request
+import aiosqlite, os, time
+from ..config import DB_PATH
 from fastapi.responses import HTMLResponse, StreamingResponse
 from ..deps import require_user
 from ..utils.system import collect_system_snapshot
@@ -60,11 +62,98 @@ async def sse_event(data: dict, event: str | None = None) -> bytes:
 
 @router.get("/sse/metrics")
 async def sse_metrics(request: Request, user: dict = Depends(require_user)):
+    """Stream latest metrics sampled and stored in DB to keep UI consistent with stored data."""
     async def event_gen():
+        last_ts = 0
         while True:
             if await request.is_disconnected():
                 break
-            snap = collect_system_snapshot()
-            yield await sse_event(snap, event="metrics")
+            try:
+                async with aiosqlite.connect(DB_PATH) as db:
+                    # read latest metric_samples row
+                    async with db.execute(
+                        "SELECT ts,cpu_percent,load1,load5,load15,mem_used,mem_total,processes,mem_percent,disk_mb_s,gpu_util_avg,gpu_temp_avg"
+                        " FROM metric_samples ORDER BY ts DESC LIMIT 1"
+                    ) as cur:
+                        row = await cur.fetchone()
+                    if row:
+                        ts = int(row[0])
+                        if ts != last_ts:
+                            last_ts = ts
+                            snap = {
+                                "time": ts,
+                                "cpu_percent": row[1],
+                                "load_avg": (row[2], row[3], row[4]),
+                                "mem": {"used": row[5], "total": row[6]},
+                                "processes": row[7],
+                                "mem_percent": row[8],
+                                "disk_mb_s": row[9],
+                                "gpu_util_avg": row[10],
+                                "gpu_temp_avg": row[11],
+                            }
+                            yield await sse_event(snap, event="metrics")
+            except Exception:
+                pass
             await asyncio.sleep(1.0)
     return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
+@router.get("/api/metrics/system")
+async def api_metrics_system(
+    request: Request,
+    start: int | None = None,
+    end: int | None = None,
+    fields: str | None = None,
+    user: dict = Depends(require_user)
+):
+    """Return historical system metrics from metric_samples between [start, end].
+    times are Unix seconds. fields is comma-separated subset of columns.
+    """
+    cols_all = [
+        "ts","cpu_percent","load1","load5","load15","mem_used","mem_total","processes","mem_percent","disk_mb_s","gpu_util_avg","gpu_temp_avg"
+    ]
+    cols = [c for c in (fields.split(",") if fields else cols_all) if c in cols_all]
+    if "ts" not in cols:
+        cols = ["ts"] + cols
+    now = int(time.time())
+    if end is None:
+        end = now
+    if start is None:
+        start = end - 3600  # default 1 hour
+    sql = f"SELECT {', '.join(cols)} FROM metric_samples WHERE ts BETWEEN ? AND ? ORDER BY ts ASC"
+    items = []
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(sql, (int(start), int(end))) as cur:
+            async for row in cur:
+                obj = {cols[i]: row[i] for i in range(len(cols))}
+                items.append(obj)
+    return {"items": items, "fields": cols}
+
+
+@router.get("/api/metrics/network")
+async def api_metrics_network(
+    request: Request,
+    iface: str = "__total__",
+    start: int | None = None,
+    end: int | None = None,
+    fields: str | None = None,
+    user: dict = Depends(require_user)
+):
+    cols_all = ["ts","iface","rx_bytes","tx_bytes","errin","errout","rx_kbps","tx_kbps","latency_ms"]
+    cols = [c for c in (fields.split(",") if fields else cols_all) if c in cols_all]
+    if "ts" not in cols:
+        cols = ["ts"] + cols
+    now = int(time.time())
+    if end is None:
+        end = now
+    if start is None:
+        start = end - 3600
+    placeholders = ", ".join(cols)
+    sql = f"SELECT {placeholders} FROM net_samples WHERE iface = ? AND ts BETWEEN ? AND ? ORDER BY ts ASC"
+    items = []
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(sql, (iface, int(start), int(end))) as cur:
+            async for row in cur:
+                obj = {cols[i]: row[i] for i in range(len(cols))}
+                items.append(obj)
+    return {"items": items, "fields": cols, "iface": iface}

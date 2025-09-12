@@ -32,6 +32,7 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 async def on_startup():
     await init_db()
     asyncio.create_task(_sampler())
+    asyncio.create_task(_retention_worker())
 
 
 @app.get("/ping")
@@ -89,6 +90,28 @@ async def _sampler():
         except Exception:
             pass
         await asyncio.sleep(interval)
+
+
+async def _retention_worker():
+    """Periodic deletion of samples older than RETENTION_DAYS (default 14)."""
+    days = int(os.environ.get("RETENTION_DAYS", "14"))
+    batch = int(os.environ.get("RETENTION_DELETE_BATCH", "50000"))
+    # run hourly
+    while True:
+        try:
+            now = int(time.time())
+            cutoff = now - days * 86400
+            async with aiosqlite.connect(DB_PATH) as db:
+                # delete in batches to avoid long locks
+                for table in ("metric_samples", "net_samples"):
+                    await db.execute(
+                        f"DELETE FROM {table} WHERE ts < ? LIMIT ?",
+                        (cutoff, batch)
+                    )
+                await db.commit()
+        except Exception:
+            pass
+        await asyncio.sleep(3600)
 
 
 # middleware and routers

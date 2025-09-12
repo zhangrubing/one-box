@@ -44,11 +44,11 @@ html[data-theme="light"] {
 }
 
 /* Page base: right-side root background */
-html[data-theme="light"] main { background: var(--surface-0) !important; }
+html[data-theme="light"] main { background: var(--surface-2) !important; }
 
 /* Left sidebar: soft background + clearer border */
 html[data-theme="light"] .sidebar {
-  background: var(--surface-2) !important;
+  background: var(--surface-0) !important;
   border-right: 1px solid var(--surface-border) !important;
 }
 
