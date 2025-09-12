@@ -45,9 +45,18 @@ export class MiniLine{
     }
     c.strokeStyle=brand; c.lineWidth=2;
     if(!this.data.length) return;
-    const n=this.data.length, dx=w/Math.max(1,n-1); const ymin=this.yMin, ymax=this.yMax||100; const yr=(ymax-ymin)||1;
+    // Use a fixed step based on the maximum sample count so the
+    // curve scrolls smoothly from right to left instead of shrinking.
+    const n = this.data.length;
+    const dx = w/Math.max(1,this.max-1); // fixed spacing
+    const start = this.max - n; // right-align data
+    const ymin = this.yMin, ymax = this.yMax || 100; const yr = (ymax - ymin) || 1;
     c.beginPath();
-    for(let i=0;i<n;i++){ const x=padL + i*dx; const y=padT + h - ((this.data[i].v - ymin) / yr) * h; if(i===0)c.moveTo(x,y); else c.lineTo(x,y); }
+    for(let i=0;i<n;i++){
+      const x = padL + (start + i)*dx;
+      const y = padT + h - ((this.data[i].v - ymin) / yr) * h;
+      if(i===0) c.moveTo(x,y); else c.lineTo(x,y);
+    }
     c.stroke();
   }
 }
