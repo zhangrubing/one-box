@@ -46,15 +46,13 @@ async def _sampler():
         try:
             snap = collect_system_snapshot()
             async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "INSERT INTO metric_samples(ts,cpu_percent,load1,load5,load15,mem_used,mem_total,processes,mem_percent,disk_mb_s,gpu_util_avg,gpu_temp_avg) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        int(time.time()), snap["cpu_percent"], snap["load_avg"][0], snap["load_avg"][1], snap["load_avg"][2],
-                        int(snap["mem"]["used"]), int(snap["mem"]["total"]), snap["processes"],
-                        float(snap.get("mem_percent") or 0.0), float(snap.get("disk_mb_s") or 0.0),
-                        float(snap.get("gpu_util_avg") or 0.0), float(snap.get("gpu_temp_avg") or 0.0),
-                    ),
-                )
+                ts = int(time.time())
+                await db.execute("INSERT INTO cpu_data(ts,cpu_percent) VALUES(?,?)", (ts, snap["cpu_percent"]))
+                await db.execute("INSERT INTO load_data(ts,load1,load5,load15) VALUES(?,?,?,?)", (ts, snap["load_avg"][0], snap["load_avg"][1], snap["load_avg"][2]))
+                await db.execute("INSERT INTO mem_data(ts,mem_used,mem_total,mem_percent) VALUES(?,?,?,?)", (ts, int(snap["mem"]["used"]), int(snap["mem"]["total"]), float(snap.get("mem_percent") or 0.0)))
+                await db.execute("INSERT INTO proc_data(ts,processes) VALUES(?,?)", (ts, snap["processes"]))
+                await db.execute("INSERT INTO diskio_data(ts,disk_mb_s) VALUES(?,?)", (ts, float(snap.get("disk_mb_s") or 0.0)))
+                await db.execute("INSERT INTO gpu_data(ts,gpu_util_avg,gpu_temp_avg) VALUES(?,?,?)", (ts, float(snap.get("gpu_util_avg") or 0.0), float(snap.get("gpu_temp_avg") or 0.0)))
                 await db.commit()
             # network per-nic sampling
             try:
@@ -63,7 +61,7 @@ async def _sampler():
                 async with aiosqlite.connect(DB_PATH) as db:
                     for name, item in (net.get("ifaces") or {}).items():
                         await db.execute(
-                            "INSERT INTO net_samples(ts,iface,rx_bytes,tx_bytes,errin,errout,rx_kbps,tx_kbps,latency_ms) VALUES(?,?,?,?,?,?,?,?,?)",
+                            "INSERT INTO net_data(ts,iface,rx_bytes,tx_bytes,errin,errout,rx_kbps,tx_kbps,latency_ms) VALUES(?,?,?,?,?,?,?,?,?)",
                             (
                                 ts, name,
                                 int(item.get("rx_bytes") or 0), int(item.get("tx_bytes") or 0),
@@ -75,7 +73,7 @@ async def _sampler():
                     # total row with latency
                     tot = net.get("total") or {}
                     await db.execute(
-                        "INSERT INTO net_samples(ts,iface,rx_bytes,tx_bytes,errin,errout,rx_kbps,tx_kbps,latency_ms) VALUES(?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO net_data(ts,iface,rx_bytes,tx_bytes,errin,errout,rx_kbps,tx_kbps,latency_ms) VALUES(?,?,?,?,?,?,?,?,?)",
                         (
                             ts, "__total__",
                             None, None,
@@ -103,7 +101,7 @@ async def _retention_worker():
             cutoff = now - days * 86400
             async with aiosqlite.connect(DB_PATH) as db:
                 # delete in batches to avoid long locks
-                for table in ("metric_samples", "net_samples"):
+                for table in ("cpu_data","mem_data","load_data","proc_data","diskio_data","gpu_data","net_data","metric_samples"):
                     await db.execute(
                         f"DELETE FROM {table} WHERE ts < ? LIMIT ?",
                         (cutoff, batch)

@@ -202,7 +202,36 @@ $('#rangeSeg').addEventListener('click', (e)=>{
   range = b.dataset.r; loadHistory();
 });
 
-mountSSE('/sse/metrics', (d,e)=>{ if(e.type==='metrics') renderSnap(d); });
+mountSSE('/sse/metrics', (d,e)=>{ if(e.type==='metrics') handleMetricsSnap(d); });
+
+function handleMetricsSnap(s){
+  // CPU
+  const cpuv = Number(s.cpu_percent||0);
+  cpuVal.textContent = isFinite(cpuv)? cpuv.toFixed(0)+'%' : '-';
+  // MEM: 优先使用后端 mem_percent；否则用 used/total 计算，并严防 NaN/Infinity
+  let memv = (s.mem_percent!=null && isFinite(Number(s.mem_percent))) ? Number(s.mem_percent) : (function(){
+    const used = Number(s.mem && s.mem.used != null ? s.mem.used : 0);
+    const total = Number(s.mem && s.mem.total != null ? s.mem.total : 0);
+    if (!total || !isFinite(used) || !isFinite(total)) return 0;
+    return used/total*100;
+  })();
+  if (!isFinite(memv)) memv = 0;
+  memVal.textContent = memv.toFixed(0)+'%';
+  const totalGb = Number(s.mem && s.mem.total != null ? s.mem.total : 0) / 1073741824;
+  memTotal.textContent = (isFinite(totalGb)? totalGb : 0).toFixed(0)+' GB';
+  // charts push
+  cpuC.push(cpuv);
+  memC.push(memv);
+  // disk
+  const dsk = Number(s.disk_mb_s||0); diskC.push(isFinite(dsk)?dsk:0);
+  // gpu
+  const gu = Number(s.gpu_util_avg||0), gt = Number(s.gpu_temp_avg||0);
+  gpuVal.textContent = isFinite(gu)? gu.toFixed(0)+'%' : '-';
+  gpuUtilC.push(isFinite(gu)?gu:0); gpuTempC.push(isFinite(gt)?gt:0);
+  // 当前/平均展示更新（使用已有 lastAvg*）
+  $('#avgCpu').textContent = `${Number(cpuv||0).toFixed(1)}% 当前 | ${(lastAvgCpu||0).toFixed(1)}% 平均`;
+  $('#avgMem').textContent = `${Number(memv||0).toFixed(1)}% 当前 | ${(lastAvgMem||0).toFixed(1)}% 平均`;
+}
 refreshGPU(); setInterval(refreshGPU, 3000);
 refreshAlerts(); setInterval(refreshAlerts, 10000);
 sampleProcessTop();

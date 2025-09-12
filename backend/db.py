@@ -37,20 +37,58 @@ CREATE TABLE IF NOT EXISTS sys_logs (
   message TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE IF NOT EXISTS metric_samples (
+-- system metrics split into dedicated tables
+CREATE TABLE IF NOT EXISTS cpu_data (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,
-  cpu_percent REAL,
-  load1 REAL,
-  load5 REAL,
-  load15 REAL,
+  date TEXT GENERATED ALWAYS AS (strftime('%Y-%m-%d', ts, 'unixepoch')) VIRTUAL,
+  cpu_percent REAL
+  , created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS mem_data (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  date TEXT GENERATED ALWAYS AS (strftime('%Y-%m-%d', ts, 'unixepoch')) VIRTUAL,
   mem_used INTEGER,
   mem_total INTEGER,
-  processes INTEGER
+  mem_percent REAL
+  , created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE IF NOT EXISTS net_samples (
+CREATE TABLE IF NOT EXISTS load_data (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,
+  date TEXT GENERATED ALWAYS AS (strftime('%Y-%m-%d', ts, 'unixepoch')) VIRTUAL,
+  load1 REAL,
+  load5 REAL,
+  load15 REAL
+  , created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS proc_data (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  date TEXT GENERATED ALWAYS AS (strftime('%Y-%m-%d', ts, 'unixepoch')) VIRTUAL,
+  processes INTEGER
+  , created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS diskio_data (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  date TEXT GENERATED ALWAYS AS (strftime('%Y-%m-%d', ts, 'unixepoch')) VIRTUAL,
+  disk_mb_s REAL
+  , created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS gpu_data (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  date TEXT GENERATED ALWAYS AS (strftime('%Y-%m-%d', ts, 'unixepoch')) VIRTUAL,
+  gpu_util_avg REAL,
+  gpu_temp_avg REAL
+  , created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS net_data (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  date TEXT GENERATED ALWAYS AS (strftime('%Y-%m-%d', ts, 'unixepoch')) VIRTUAL,
   iface TEXT NOT NULL,
   rx_bytes INTEGER,
   tx_bytes INTEGER,
@@ -58,7 +96,8 @@ CREATE TABLE IF NOT EXISTS net_samples (
   errout INTEGER,
   rx_kbps REAL,
   tx_kbps REAL,
-  latency_ms REAL
+  latency_ms REAL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 '''
 
@@ -79,18 +118,33 @@ async def init_db():
         await db.executescript(SCHEMA_SQL)
         # indexes for time-range queries
         try:
-            await db.execute("CREATE INDEX IF NOT EXISTS idx_metric_samples_ts ON metric_samples(ts)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_cpu_data_ts ON cpu_data(ts)")
         except Exception:
             pass
         try:
-            await db.execute("CREATE INDEX IF NOT EXISTS idx_net_samples_iface_ts ON net_samples(iface, ts)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_net_data_iface_ts ON net_data(iface, ts)")
         except Exception:
             pass
-        # new columns for metrics
-        await ensure_column(db, "metric_samples", "mem_percent", "REAL")
-        await ensure_column(db, "metric_samples", "disk_mb_s", "REAL")
-        await ensure_column(db, "metric_samples", "gpu_util_avg", "REAL")
-        await ensure_column(db, "metric_samples", "gpu_temp_avg", "REAL")
+        # date indexes for quick daily filtering
+        for t in ("cpu_data","mem_data","load_data","proc_data","diskio_data","gpu_data","net_data"):
+            try:
+                await db.execute(f"CREATE INDEX IF NOT EXISTS idx_{t}_date ON {t}(date)")
+            except Exception:
+                pass
+        # additional indexes per table
+        for t in ("mem_data","load_data","proc_data","diskio_data","gpu_data"):
+            try:
+                await db.execute(f"CREATE INDEX IF NOT EXISTS idx_{t}_ts ON {t}(ts)")
+            except Exception:
+                pass
+        # keep backward-compat columns if old table exists
+        try:
+            await ensure_column(db, "metric_samples", "mem_percent", "REAL")
+            await ensure_column(db, "metric_samples", "disk_mb_s", "REAL")
+            await ensure_column(db, "metric_samples", "gpu_util_avg", "REAL")
+            await ensure_column(db, "metric_samples", "gpu_temp_avg", "REAL")
+        except Exception:
+            pass
         # bootstrap admin user
         async with db.execute("SELECT COUNT(1) FROM users") as cur:
             row = await cur.fetchone()

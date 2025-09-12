@@ -9,6 +9,11 @@ export class MiniLine{
     this.max = opt.max||300; this.data = []; this.yMin = opt.yMin ?? 0; this.yMax = opt.yMax ?? 100;
     this.axes = opt.axes || false; this.ticks = opt.ticks || [0,25,50,75,100];
     this.xLabels = opt.xLabels || ["-60s","-30s","now"];
+    // optional xTicks generator for timeMode: function(t0, t1) -> [{p:0..1,label:""}, ...]
+    this.xTicks = opt.xTicks || null;
+    // time-mode: map points by ts within [t0, t1]
+    this.timeMode = !!opt.timeMode; // if true, expect points as {ts, v}
+    this.t0 = opt.t0 || 0; this.t1 = opt.t1 || 0; // seconds unix
     if (!this.noop){
       const dpr = window.devicePixelRatio||1; this.el.width=this.el.clientWidth*dpr; this.el.height=this.el.clientHeight*dpr; this.c.scale(dpr,dpr);
       window.addEventListener('resize', ()=>{ const dpr=window.devicePixelRatio||1; this.el.width=this.el.clientWidth*dpr; this.el.height=this.el.clientHeight*dpr; this.c.setTransform(1,0,0,1,0,0); this.c.scale(dpr,dpr); this.draw(); });
@@ -17,9 +22,28 @@ export class MiniLine{
       console.warn('[MiniLine] canvas not found, drawing disabled.');
     }
   }
-  push(v){ if(this.noop) return; this.data.push({t:Date.now(), v}); if(this.data.length>this.max) this.data.shift(); this.draw(); }
+  push(v, tsSec){
+    if(this.noop) return;
+    if(this.timeMode){
+      const ts = Number.isFinite(tsSec)? Number(tsSec) : Math.floor(Date.now()/1000);
+      // dedupe: if last has same ts, overwrite
+      const last = this.data[this.data.length-1];
+      if(last && last.ts === ts){ last.v = v; }
+      else { this.data.push({ts, v}); }
+      // window trim if t0 set
+      if(this.t0 && this.t1){ while(this.data.length && this.data[0].ts < this.t0) this.data.shift(); }
+      // hard cap
+      if(this.data.length>this.max) this.data.shift();
+    }else{
+      this.data.push({t:Date.now(), v}); if(this.data.length>this.max) this.data.shift();
+    }
+    this.draw();
+  }
   setRange(a,b){ if(this.noop) return; this.yMin=a; this.yMax=b; this.draw(); }
   setXLabels(lbls){ if(this.noop) return; if(Array.isArray(lbls)) this.xLabels = lbls; this.draw(); }
+  setWindow(t0, t1){ this.t0 = Number(t0)||0; this.t1 = Number(t1)||0; if(this.timeMode){ // trim to window
+    while(this.data.length && this.data[0].ts < this.t0) this.data.shift(); }
+    this.draw(); }
   clear(){ if(this.noop) return; this.c.clearRect(0,0,this.el.clientWidth,this.el.clientHeight); }
   draw(){
     if(this.noop) return;
@@ -40,22 +64,43 @@ export class MiniLine{
         c.strokeStyle = border; c.beginPath(); c.moveTo(padL, y); c.lineTo(padL+w, y); c.stroke();
         c.fillText(String(t), 4, y+4);
       });
-      const labels = this.xLabels || ["-60s","-30s","now"];
-      [0, 0.5, 1].forEach((p,i)=>{ const x = padL + p*w; c.fillText(labels[i]||"", x-12, padT+h+14); });
+      // X axis ticks: prefer xTicks in timeMode, else fallback to labels
+      if(this.timeMode && typeof this.xTicks === 'function' && this.t1>this.t0){
+        const ticks = this.xTicks(this.t0, this.t1) || [];
+        ticks.forEach(tk=>{
+          const p = Math.min(1, Math.max(0, Number(tk.p)||0));
+          const x = padL + p*w;
+          c.fillText(String(tk.label||''), x-12, padT+h+14);
+          c.strokeStyle = border; c.beginPath(); c.moveTo(x, padT+h-4); c.lineTo(x, padT+h); c.stroke();
+        });
+      } else {
+        const labels = this.xLabels || ["-60s","-30s","now"];
+        [0, 0.5, 1].forEach((p,i)=>{ const x = padL + p*w; c.fillText(labels[i]||"", x-12, padT+h+14); });
+      }
     }
     c.strokeStyle=brand; c.lineWidth=2;
     if(!this.data.length) return;
-    // Use a fixed step based on the maximum sample count so the
-    // curve scrolls smoothly from right to left instead of shrinking.
-    const n = this.data.length;
-    const dx = w/Math.max(1,this.max-1); // fixed spacing
-    const start = this.max - n; // right-align data
     const ymin = this.yMin, ymax = this.yMax || 100; const yr = (ymax - ymin) || 1;
     c.beginPath();
-    for(let i=0;i<n;i++){
-      const x = padL + (start + i)*dx;
-      const y = padT + h - ((this.data[i].v - ymin) / yr) * h;
-      if(i===0) c.moveTo(x,y); else c.lineTo(x,y);
+    if(this.timeMode && this.t1>this.t0){
+      const span = this.t1 - this.t0;
+      for(let i=0;i<this.data.length;i++){
+        const p = this.data[i];
+        const ts = Math.min(Math.max(p.ts, this.t0), this.t1);
+        const x = padL + ((ts - this.t0)/span) * w;
+        const y = padT + h - ((p.v - ymin) / yr) * h;
+        if(i===0) c.moveTo(x,y); else c.lineTo(x,y);
+      }
+    }else{
+      // legacy index-based placement
+      const n = this.data.length;
+      const dx = w/Math.max(1,this.max-1);
+      const start = this.max - n;
+      for(let i=0;i<n;i++){
+        const x = padL + (start + i)*dx;
+        const y = padT + h - ((this.data[i].v - ymin) / yr) * h;
+        if(i===0) c.moveTo(x,y); else c.lineTo(x,y);
+      }
     }
     c.stroke();
   }
