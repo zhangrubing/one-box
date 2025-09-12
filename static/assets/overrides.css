@@ -34,3 +34,56 @@ html[data-theme="light"] .btn { background: var(--brand) !important; color: #fff
 html[data-theme="light"] a { color: var(--brand) !important; }
 
 .sidebar .brand img { height:28px; width:28px; border-radius:6px; }
+
+/* Light mode subtle surfaces */
+html[data-theme="light"] {
+  --surface-0: #f5f7fb; /* page base */
+  --surface-1: #f1f4f9; /* content area */
+  --surface-2: #eef2f8; /* sidebar/header/card */
+  --surface-border: #d8e0ee; /* slightly stronger border */
+}
+
+/* Page base: right-side root background */
+html[data-theme="light"] main { background: var(--surface-0) !important; }
+
+/* Left sidebar: soft background + clearer border */
+html[data-theme="light"] .sidebar {
+  background: var(--surface-2) !important;
+  border-right: 1px solid var(--surface-border) !important;
+}
+
+/* Header: very light gradient and subtle border */
+html[data-theme="light"] .header {
+  background: linear-gradient(180deg, rgba(255,255,255,.75), rgba(255,255,255,.55)), var(--surface-2) !important;
+  backdrop-filter: saturate(1.1);
+  border-bottom: 1px solid var(--surface-border) !important;
+}
+
+/* Content region: slightly stronger than page base */
+html[data-theme="light"] .content { background: var(--surface-1) !important; }
+
+/* Cards: maintain light polish with defined border */
+html[data-theme="light"] .card {
+  background: linear-gradient(180deg, rgba(255,255,255,.85), rgba(255,255,255,.62)), var(--surface-2) !important;
+  border: 1px solid var(--surface-border) !important;
+}
+
+/* Tables/inputs: reinforce borders slightly */
+html[data-theme="light"] .table th,
+html[data-theme="light"] .table td,
+html[data-theme="light"] .input { border-color: var(--surface-border) !important; }
+
+/* Nav hover: soft brand-tinted hover to avoid glare */
+html[data-theme="light"] .nav a:hover {
+  background: rgba(37,99,235,.06) !important;
+  border-color: var(--surface-border) !important;
+}
+
+/* Light mode: sidebar nav text color as neutral, not blue */
+html[data-theme="light"] .nav a { color: var(--text) !important; }
+html[data-theme="light"] .nav a:hover { color: var(--text) !important; }
+html[data-theme="light"] .nav a.active { color: var(--text) !important; }
+
+/* Light mode: sidebar nav text color only; keep icon colors unchanged */
+html[data-theme="light"] .nav a { color: var(--text) !important; }
+html[data-theme="light"] .nav a span { color: unset !important; }
