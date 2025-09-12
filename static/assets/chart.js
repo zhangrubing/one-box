@@ -7,6 +7,8 @@ export class MiniLine{
     this.noop = !this.el;
     this.c = this.noop ? null : this.el.getContext('2d');
     this.max = opt.max||300; this.data = []; this.yMin = opt.yMin ?? 0; this.yMax = opt.yMax ?? 100;
+    // span: time window in ms for visible data (default 60s)
+    this.span = opt.span || 60000;
     this.axes = opt.axes || false; this.ticks = opt.ticks || [0,25,50,75,100];
     this.xLabels = opt.xLabels || ["-60s","-30s","now"];
     if (!this.noop){
@@ -17,7 +19,15 @@ export class MiniLine{
       console.warn('[MiniLine] canvas not found, drawing disabled.');
     }
   }
-  push(v){ if(this.noop) return; this.data.push({t:Date.now(), v}); if(this.data.length>this.max) this.data.shift(); this.draw(); }
+  push(v){
+    if(this.noop) return;
+    const now = Date.now();
+    this.data.push({t:now, v});
+    // Drop samples outside the time window or exceeding max points
+    while(this.data.length && (now - this.data[0].t) > this.span) this.data.shift();
+    if(this.data.length > this.max) this.data.shift();
+    this.draw();
+  }
   setRange(a,b){ if(this.noop) return; this.yMin=a; this.yMax=b; this.draw(); }
   setXLabels(lbls){ if(this.noop) return; if(Array.isArray(lbls)) this.xLabels = lbls; this.draw(); }
   clear(){ if(this.noop) return; this.c.clearRect(0,0,this.el.clientWidth,this.el.clientHeight); }
@@ -45,9 +55,16 @@ export class MiniLine{
     }
     c.strokeStyle=brand; c.lineWidth=2;
     if(!this.data.length) return;
-    const n=this.data.length, dx=w/Math.max(1,n-1); const ymin=this.yMin, ymax=this.yMax||100; const yr=(ymax-ymin)||1;
+    const n = this.data.length;
+    const ymin = this.yMin, ymax = this.yMax || 100; const yr = (ymax - ymin) || 1;
+    const now = Date.now();
     c.beginPath();
-    for(let i=0;i<n;i++){ const x=padL + i*dx; const y=padT + h - ((this.data[i].v - ymin) / yr) * h; if(i===0)c.moveTo(x,y); else c.lineTo(x,y); }
+    for(let i=0;i<n;i++){
+      const age = now - this.data[i].t;
+      const x = padL + (1 - age/this.span) * w;
+      const y = padT + h - ((this.data[i].v - ymin) / yr) * h;
+      if(i===0) c.moveTo(x,y); else c.lineTo(x,y);
+    }
     c.stroke();
   }
 }
