@@ -96,14 +96,14 @@ html[data-theme="light"] .nav a span { color: unset !important; }
 /* Ensure date/time picker icons are visible in dark mode */
 html:not([data-theme="light"]) input[type="date"],
 html:not([data-theme="light"]) input[type="time"],
-html:not([data-theme="light"]) input[type="datetime-local"] {
+/* html:not([data-theme="light"]) input[type="datetime-local"] {
   color-scheme: light;
-}
+} */
 html[data-theme="light"] input[type="date"],
 html[data-theme="light"] input[type="time"],
-html[data-theme="light"] input[type="datetime-local"] {
+/* html[data-theme="light"] input[type="datetime-local"] {
   color-scheme: dark;
-}
+} */
 /* WebKit calendar/clock icon tint */
 /* Dark theme: force white-looking icons */
 html:not([data-theme="light"]) input[type="date"]::-webkit-calendar-picker-indicator,
