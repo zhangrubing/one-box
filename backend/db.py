@@ -101,6 +101,49 @@ CREATE TABLE IF NOT EXISTS net_data (
   latency_ms REAL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS gpu_detailed_data (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  date TEXT GENERATED ALWAYS AS (strftime('%Y-%m-%d', ts, 'unixepoch')) VIRTUAL,
+  gpu_index INTEGER NOT NULL,
+  gpu_name TEXT,
+  utilization REAL,
+  temperature REAL,
+  memory_used INTEGER,
+  memory_total INTEGER,
+  memory_percent REAL,
+  power_draw REAL,
+  clock_graphics REAL,
+  clock_memory REAL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS gpu_process_data (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  date TEXT GENERATED ALWAYS AS (strftime('%Y-%m-%d', ts, 'unixepoch')) VIRTUAL,
+  gpu_index INTEGER NOT NULL,
+  pid INTEGER NOT NULL,
+  process_name TEXT,
+  memory_used INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS gpu_statistics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  date TEXT GENERATED ALWAYS AS (strftime('%Y-%m-%d', ts, 'unixepoch')) VIRTUAL,
+  period TEXT NOT NULL, -- '1h', '6h', '1d', '7d', '30d'
+  avg_utilization REAL,
+  max_utilization REAL,
+  min_utilization REAL,
+  avg_temperature REAL,
+  max_temperature REAL,
+  min_temperature REAL,
+  total_processes INTEGER,
+  gpu_count INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 '''
 
 
