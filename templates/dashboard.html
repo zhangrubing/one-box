@@ -77,11 +77,13 @@ const gpuTempC=new MiniLine('gpuTempChart',{timeMode:true,max:720,yMin:0,yMax:10
 let range='5m';
 let lastAvgCpu=0, lastAvgMem=0, lastAvgDisk=0; let sseRef=null;
 let loadId=0; // 防止并发加载导致旧数据覆盖新结果
+const DEBUG_POPUPS = false; // 屏蔽调试弹窗（改为 true 才会弹出）
+let winStart=0, winEnd=0; // 使用服务端时间窗口，避免客户端时钟偏差
 
 function nowSec(){ return Math.floor(Date.now()/1000); }
 function windowSecs(){ return range==='24h'? 24*3600 : (range==='1h'? 3600 : 300); }
 function rangeSince(){ return nowSec() - windowSecs(); }
-function setWindowForAll(){ const t1=nowSec(), t0=t1-windowSecs(); cpuC.setWindow(t0,t1); memC.setWindow(t0,t1); diskC.setWindow(t0,t1); gpuUtilC.setWindow(t0,t1); gpuTempC.setWindow(t0,t1); }
+function setWindowAll(t0, t1){ winStart=t0; winEnd=t1; cpuC.setWindow(t0,t1); memC.setWindow(t0,t1); diskC.setWindow(t0,t1); gpuUtilC.setWindow(t0,t1); gpuTempC.setWindow(t0,t1); }
 function fmtTs(ts){ if(!ts && ts!==0) return '-'; const d=new Date(Number(ts)*1000); const pad=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
 
 async function refreshGPU(){
@@ -126,15 +128,11 @@ async function loadHistory(){
   const r = await apiGet(`/api/metrics/system?start=${since}&end=${until}&fields=${fields}`);
   const raw = (r && r.items) ? r.items : [];
 
-  // 更严格：先将图表窗口设置为历史请求窗口 [since, until]，再推入数据，确保横轴严格覆盖整段时间
-  cpuC.setWindow(since, until);
-  memC.setWindow(since, until);
-  diskC.setWindow(since, until);
-  gpuUtilC.setWindow(since, until);
-  gpuTempC.setWindow(since, until);
+  // 固定窗口到请求窗口，确保横轴严格覆盖整段时间
+  setWindowAll(since, until);
 
-  // 调试弹窗：最近 1 小时
-  if (range === '1h'){
+  // 调试弹窗：最近 1 小时（仅在 DEBUG_POPUPS 为 true 时弹出）
+  if (DEBUG_POPUPS && range === '1h'){
     const tsList = raw.map(it=>Number(it.ts||0)).filter(x=>x>=since && x<=until).sort((a,b)=>a-b);
     const minTs = tsList.length? tsList[0] : null; const maxTs = tsList.length? tsList[tsList.length-1] : null;
     let intervalSec = 5; if (tsList.length>=2){ const deltas=[]; for(let i=1;i<tsList.length;i++){ const d=tsList[i]-tsList[i-1]; if(d>0&&isFinite(d)) deltas.push(d);} deltas.sort((a,b)=>a-b); if(deltas.length){ const mid=Math.floor(deltas.length/2); intervalSec = deltas.length%2? deltas[mid] : Math.round((deltas[mid-1]+deltas[mid])/2); intervalSec=Math.max(1,Math.round(intervalSec)); } }
@@ -142,8 +140,8 @@ async function loadHistory(){
     const approxMissing = Math.max(0, expected - tsList.length);
     alert([`[调试] 请求窗口(1h): ${fmtTs(since)} ~ ${fmtTs(until)}`, `返回条数: ${tsList.length}`, `返回范围: ${fmtTs(minTs)} ~ ${fmtTs(maxTs)}`, `估算采样间隔: ${intervalSec}s`, `理论条数(估算): ${expected}`, `估算缺失槽位: ${missing}（或理论-实际≈${approxMissing}）`, `是否存在缺失: ${(missing>0||approxMissing>0)?'是':'否'}`].join('\n'));
   }
-  // 调试弹窗：最近 24 小时
-  if (range === '24h'){
+  // 调试弹窗：最近 24 小时（仅在 DEBUG_POPUPS 为 true 时弹出）
+  if (DEBUG_POPUPS && range === '24h'){
     const tsList = raw.map(it=>Number(it.ts||0)).filter(x=>x>=since && x<=until).sort((a,b)=>a-b);
     const minTs = tsList.length? tsList[0] : null; const maxTs = tsList.length? tsList[tsList.length-1] : null;
     let intervalSec = 5; if (tsList.length>=2){ const deltas=[]; for(let i=1;i<tsList.length;i++){ const d=tsList[i]-tsList[i-1]; if(d>0&&isFinite(d)) deltas.push(d);} deltas.sort((a,b)=>a-b); if(deltas.length){ const mid=Math.floor(deltas.length/2); intervalSec = deltas.length%2? deltas[mid] : Math.round((deltas[mid-1]+deltas[mid])/2); intervalSec=Math.max(1,Math.round(intervalSec)); } }
@@ -172,8 +170,7 @@ async function loadHistory(){
   const targetMax = maxDisk>0 ? Math.min(maxDisk*1.3, 5000) : 50; diskC.setRange(0, targetMax);
   diskC.ticks = (function(max){ const m=Math.min(Math.max(Math.ceil(max),10),5000); const out=[]; let step=10; if(m<=50)step=10; else if(m<=100)step=20; else if(m<=200)step=50; else if(m<=500)step=100; else if(m<=1000)step=200; else step=500; for(let v=0; v<=m; v+=step) out.push(v); if(out[out.length-1]!==m) out.push(m); return out; })(targetMax);
 
-  // 历史加载完成后，再同步一次窗口（与 range 保持一致）
-  setWindowForAll();
+  // 历史加载完成后，窗口仍保持 [since,until]，由 SSE 再平滑滚动（基于服务端 ts）
   lastAvgCpu = cnt? (sumCpu/cnt) : 0; lastAvgMem = cnt? (sumMem/cnt) : 0; lastAvgDisk = cnt? (sumDisk/cnt) : 0;
   document.getElementById('avgCpu').textContent = `${(lastAvgCpu||0).toFixed(1)}% 平均`;
   document.getElementById('avgMem').textContent = `${(lastAvgMem||0).toFixed(1)}% 平均`;
@@ -188,7 +185,9 @@ function handleMetricsSnap(s){
   if (!isFinite(memv)) memv = 0; memVal.textContent = memv.toFixed(0)+'%';
   const totalGb = Number(s.mem && s.mem.total != null ? s.mem.total : 0) / 1073741824; memTotal.textContent = (isFinite(totalGb)? totalGb : 0).toFixed(0)+' GB';
   const ts = Number(s.time || s.ts || nowSec());
-  setWindowForAll();
+  // 使用服务端 ts 平滑滚动窗口，避免客户端时钟偏差
+  const w = windowSecs();
+  setWindowAll(ts - w, ts);
   cpuC.push(isFinite(cpuv)?cpuv:0, ts); memC.push(memv, ts);
   const dsk = Number(s.disk_mb_s||0); diskC.push(isFinite(dsk)?dsk:0, ts);
   const gu = Number(s.gpu_util_avg||0), gt = Number(s.gpu_temp_avg||0); gpuVal.textContent = isFinite(gu)? gu.toFixed(0)+'%' : '-';
