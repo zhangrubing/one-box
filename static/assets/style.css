@@ -32,7 +32,7 @@ a{color:var(--brand);text-decoration:none}
 .login-wrap{max-width:420px;margin:12vh auto;background:var(--layer);border:1px solid var(--border);border-radius:12px;padding:20px}
 .flex{display:flex;gap:10px;align-items:center}.right{text-align:right}.mt-2{margin-top:8px}.mt-3{margin-top:12px}.mt-4{margin-top:16px}.mt-6{margin-top:24px}.small{color:var(--muted);font-size:12px}
 body,.card,.sidebar,.header,.btn,.input,.table th,.table td{transition:background-color .2s ease,color .2s ease,border-color .2s ease}
-.section-title{font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.section-title{font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:12px}
 .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center}
 .modal-backdrop.show{display:flex}
 .modal{background:var(--layer);border:1px solid var(--border);border-radius:12px;padding:20px;min-width:360px}

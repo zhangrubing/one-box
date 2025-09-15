@@ -167,8 +167,35 @@ async function loadHistory(){
   }
   for (const it of filtered){ sumCpu+=Number(it.cpu_percent||0); sumMem+=Number(it.mem_percent||0); sumDisk+=Number(it.disk_mb_s||0); cnt++; }
   // 调整磁盘轴
-  const targetMax = maxDisk>0 ? Math.min(maxDisk*1.3, 5000) : 50; diskC.setRange(0, targetMax);
-  diskC.ticks = (function(max){ const m=Math.min(Math.max(Math.ceil(max),10),5000); const out=[]; let step=10; if(m<=50)step=10; else if(m<=100)step=20; else if(m<=200)step=50; else if(m<=500)step=100; else if(m<=1000)step=200; else step=500; for(let v=0; v<=m; v+=step) out.push(v); if(out[out.length-1]!==m) out.push(m); return out; })(targetMax);
+  const targetMax = maxDisk>0 ? Math.min(maxDisk*1.3, 5000) : 50;
+  // Generate nice ticks so small ranges (5m/1h) still have multiple grid lines
+  function niceNumber(x, round){
+    if(!isFinite(x) || x<=0) return 1;
+    const exp = Math.floor(Math.log10(x));
+    const f = x / Math.pow(10, exp);
+    let nf;
+    if (round){ nf = (f < 1.5) ? 1 : (f < 3) ? 2 : (f < 7) ? 5 : 10; }
+    else { nf = (f <= 1) ? 1 : (f <= 2) ? 2 : (f <= 5) ? 5 : 10; }
+    return nf * Math.pow(10, exp);
+  }
+  function genNiceYTicks(max, desired=6){
+    const cap = Math.min(Math.max(max, 10), 5000);
+    const min = 0;
+    const range = cap - min;
+    const niceRange = niceNumber(range, false);
+    const spacing = Math.max(1e-12, niceNumber(niceRange / Math.max(2, desired-1), true));
+    const graphMin = 0;
+    const graphMax = Math.ceil(cap / spacing) * spacing;
+    const out=[]; for(let v=graphMin; v<=graphMax + spacing*0.5; v+=spacing){ out.push(Number(v.toFixed(10))); }
+    return out;
+  }
+  // Important: set yMax to the top tick so that all ticks are within range
+  const yTicks = genNiceYTicks(targetMax, 6);
+  const yTop = yTicks.length ? yTicks[yTicks.length-1] : targetMax;
+  diskC.setRange(0, yTop);
+  diskC.ticks = yTicks;
+  // Ensure updated tick marks appear immediately
+  try{ diskC.draw(); }catch(_){ }
 
   // 历史加载完成后，窗口仍保持 [since,until]，由 SSE 再平滑滚动（基于服务端 ts）
   lastAvgCpu = cnt? (sumCpu/cnt) : 0; lastAvgMem = cnt? (sumMem/cnt) : 0; lastAvgDisk = cnt? (sumDisk/cnt) : 0;

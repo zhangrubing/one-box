@@ -27,9 +27,22 @@ export class MiniLine{
       if (!globalThis.__MiniLineThemeObserverInstalled){
         try{
           const mo = new MutationObserver((muts)=>{
-            for (const m of muts){ if (m.attributeName === 'data-theme'){ requestAnimationFrame(()=>{
-              __MiniLineRegistry.forEach(inst=>{ try{ inst.draw(); }catch(e){} });
-            }); break; } }
+            for (const m of muts){ if (m.attributeName === 'data-theme'){
+              // On theme toggle, force a few quick redraws so canvas picks up
+              // the new CSS variable values immediately and after short transitions.
+              const redraw = ()=>{ __MiniLineRegistry.forEach(inst=>{ try{ inst.draw(); }catch(e){} }); };
+              // First rAF: next frame after attribute change
+              requestAnimationFrame(()=>{
+                redraw();
+                // Second rAF: ensure styles fully applied on following frame
+                requestAnimationFrame(redraw);
+                // Small timeout to catch any async style recalcs
+                setTimeout(redraw, 60);
+                // After typical 200ms UI transitions complete
+                setTimeout(redraw, 220);
+              });
+              break;
+            } }
           });
           mo.observe(document.documentElement, { attributes: true });
           globalThis.__MiniLineThemeObserverInstalled = true;
@@ -70,19 +83,25 @@ export class MiniLine{
     const brand = cs.getPropertyValue('--brand').trim()||'#3b82f6';
     const muted = cs.getPropertyValue('--muted').trim()||'#94a3b8';
     const border= cs.getPropertyValue('--border').trim()||'#24324a';
-    const padL = this.axes ? 36 : 6, padB = this.axes ? 18 : 4, padT = 4, padR = 6;
+    // Slightly larger padding to prevent title/axis overlap and keep labels readable
+    const padL = this.axes ? 44 : 6, padB = this.axes ? 22 : 4, padT = 16, padR = 6;
     const w = Math.max(0, W - padL - padR), h = Math.max(0, H - padT - padB);
     if(this.axes){
+      c.save();
       c.strokeStyle = border; c.lineWidth=1;
       c.beginPath(); c.moveTo(padL, padT); c.lineTo(padL, padT+h); c.lineTo(padL+w, padT+h); c.stroke();
       c.font="11px ui-sans-serif,system-ui"; c.fillStyle=muted;
+      // Use middle baseline for y tick labels for better alignment
+      c.textBaseline = 'middle'; c.textAlign = 'left';
       const yr = (this.yMax - this.yMin) || 1;
       this.ticks.forEach(t => {
         const y = padT + (1 - (t - this.yMin)/yr) * h;
         c.strokeStyle = border; c.beginPath(); c.moveTo(padL, y); c.lineTo(padL+w, y); c.stroke();
-        c.fillText(String(t), 4, y+4);
+        const label = (Math.abs(t) < 1 && t !== 0) ? Number(t.toFixed(2)) : (t % 1 === 0 ? t : Number(t.toFixed(1)));
+        c.fillText(String(label), 8, y);
       });
       // X axis ticks: prefer xTicks in timeMode, else fallback to labels
+      c.textBaseline = 'alphabetic'; c.textAlign = 'left';
       if(this.timeMode && typeof this.xTicks === 'function' && this.t1>this.t0){
         const ticks = this.xTicks(this.t0, this.t1) || [];
         ticks.forEach(tk=>{
@@ -95,6 +114,7 @@ export class MiniLine{
         const labels = this.xLabels || ["-60s","-30s","now"];
         [0, 0.5, 1].forEach((p,i)=>{ const x = padL + p*w; c.fillText(labels[i]||"", x-12, padT+h+14); });
       }
+      c.restore();
     }
     c.strokeStyle=brand; c.lineWidth=2;
     if(!this.data.length) return;
