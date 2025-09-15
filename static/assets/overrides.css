@@ -31,6 +31,10 @@ html[data-theme="light"] .modal { background: var(--card) !important; border-col
 html[data-theme="light"] .table th,
 html[data-theme="light"] .table td { border-bottom:1px solid var(--border) !important; color: var(--text) !important; }
 html[data-theme="light"] .btn { background: var(--brand) !important; color: #fff !important; }
+/* Preserve semantic colors for specific buttons in light mode */
+html[data-theme="light"] .btn.ok { background: var(--ok) !important; }
+html[data-theme="light"] .btn.warn { background: var(--warn) !important; }
+html[data-theme="light"] .btn.danger { background: var(--danger) !important; }
 html[data-theme="light"] a { color: var(--brand) !important; }
 
 .sidebar .brand img { height:28px; width:28px; border-radius:6px; }

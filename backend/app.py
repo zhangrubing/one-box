@@ -54,6 +54,66 @@ async def _sampler():
                 await db.execute("INSERT INTO diskio_data(ts,disk_mb_s) VALUES(?,?)", (ts, float(snap.get("disk_mb_s") or 0.0)))
                 await db.execute("INSERT INTO gpu_data(ts,gpu_util_avg,gpu_temp_avg) VALUES(?,?,?)", (ts, float(snap.get("gpu_util_avg") or 0.0), float(snap.get("gpu_temp_avg") or 0.0)))
                 await db.commit()
+
+            # Threshold-based alerts with 10-minute rate limiting per alert title
+            try:
+                CPU_HIGH = float(os.environ.get("ALERT_CPU_PCT", "90"))
+                MEM_HIGH = float(os.environ.get("ALERT_MEM_PCT", "90"))
+                GPU_TEMP_HIGH = float(os.environ.get("ALERT_GPU_TEMP", "85"))
+                DISK_MB_S_HIGH = float(os.environ.get("ALERT_DISK_MB_S", "1000"))
+
+                async def maybe_alert(title: str, message: str, level: str = "WARN", min_interval_sec: int = 600):
+                    # Only insert if there is no same-title alert in the last min_interval_sec
+                    async with aiosqlite.connect(DB_PATH) as db2:
+                        sql = f"SELECT id FROM alerts WHERE title=? AND created_at >= datetime('now','-{min_interval_sec} seconds') LIMIT 1"
+                        cur = await db2.execute(sql, (title,))
+                        row = await cur.fetchone()
+                        if not row:
+                            await db2.execute("INSERT INTO alerts (level, title, message) VALUES (?,?,?)", (level, title, message))
+                            await db2.commit()
+
+                # CPU
+                cpuv = float(snap.get("cpu_percent") or 0)
+                if cpuv >= CPU_HIGH:
+                    await maybe_alert(
+                        title="CPU 使用率过高",
+                        message=f"当前 {cpuv:.1f}% ≥ 阈值 {CPU_HIGH:.1f}%",
+                        level="WARN",
+                    )
+                # Memory
+                memv = float(snap.get("mem_percent") or 0)
+                if memv >= MEM_HIGH:
+                    total_gb = (snap.get("mem") or {}).get("total") or 0
+                    used_gb = (snap.get("mem") or {}).get("used") or 0
+                    try:
+                        total_gb = total_gb/1073741824
+                        used_gb = used_gb/1073741824
+                    except Exception:
+                        pass
+                    await maybe_alert(
+                        title="内存占用过高",
+                        message=f"当前 {memv:.1f}% (≈ {used_gb:.0f}/{total_gb:.0f} GB) ≥ 阈值 {MEM_HIGH:.1f}%",
+                        level="WARN",
+                    )
+                # Disk IO
+                dsk = float(snap.get("disk_mb_s") or 0)
+                if dsk >= DISK_MB_S_HIGH:
+                    await maybe_alert(
+                        title="磁盘 IO 过高",
+                        message=f"当前 {dsk:.1f} MB/s ≥ 阈值 {DISK_MB_S_HIGH:.1f} MB/s",
+                        level="WARN",
+                    )
+                # GPU temperature
+                gt = float(snap.get("gpu_temp_avg") or 0)
+                if gt >= GPU_TEMP_HIGH:
+                    await maybe_alert(
+                        title="GPU 温度过高",
+                        message=f"当前 {gt:.0f}℃ ≥ 阈值 {GPU_TEMP_HIGH:.0f}℃",
+                        level="ERROR",
+                    )
+            except Exception:
+                # Alerting must not break sampling
+                pass
             # network per-nic sampling
             try:
                 net = collect_network_rates()
@@ -83,6 +143,21 @@ async def _sampler():
                         ),
                     )
                     await db.commit()
+                # Network-related alert: high latency on total
+                try:
+                    LAT_HIGH = float(os.environ.get("ALERT_LAT_MS", "300"))
+                    lt = net.get("latency_ms")
+                    if isinstance(lt, (int, float)) and lt >= LAT_HIGH:
+                        async with aiosqlite.connect(DB_PATH) as adb:
+                            sql = "SELECT id FROM alerts WHERE title=? AND created_at >= datetime('now','-600 seconds') LIMIT 1"
+                            ttl = "网络延迟过高"
+                            row = await (await adb.execute(sql, (ttl,))).fetchone()
+                            if not row:
+                                msg = f"当前延迟 {lt:.0f} ms ≥ 阈值 {LAT_HIGH:.0f} ms"
+                                await adb.execute("INSERT INTO alerts(level,title,message) VALUES(?,?,?)", ("WARN", ttl, msg))
+                                await adb.commit()
+                except Exception:
+                    pass
             except Exception:
                 pass
         except Exception:

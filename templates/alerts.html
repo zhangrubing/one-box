@@ -1,10 +1,110 @@
 {% extends "base.html" %}{% set page_title="告警中心" %}{% block content %}
-<div class="card"><div class="flex"><div class="section-title"><span>告警</span></div><div style="margin-left:auto;"><button class="btn" id="new">+ 新增（管理员）</button></div></div>
-<table class="table mt-3"><thead><tr><th>ID</th><th>级别</th><th>标题</th><th>内容</th><th>时间</th><th>状态</th><th>操作</th></tr></thead><tbody id="tb"></tbody></table>
+<div class="card">
+  <div class="flex" style="align-items:center;gap:10px">
+    <div class="section-title"><span>告警</span></div>
+  </div>
+
+  <div class="flex" style="gap:10px; align-items:center; margin:8px 0 6px; flex-wrap:wrap">
+    <label class="small" style="color:var(--muted)">筛选</label>
+    <select class="input" id="fLevel" style="max-width:160px">
+      <option value="">全部级别</option>
+      <option value="INFO">INFO</option>
+      <option value="WARN">WARN</option>
+      <option value="ERROR">ERROR</option>
+      <option value="CRITICAL">CRITICAL</option>
+    </select>
+    <select class="input" id="fAck" style="max-width:160px">
+      <option value="">全部状态</option>
+      <option value="0">未确认</option>
+      <option value="1">已确认</option>
+    </select>
+    <button class="btn" id="doSearch">查询</button>
+    <button class="btn secondary" id="doReset">清空</button>
+    <div style="margin-left:auto" class="small" id="sumInfo"></div>
+  </div>
+
+  <table class="table mt-3">
+    <thead>
+      <tr><th>ID</th><th>级别</th><th>标题</th><th>内容</th><th>时间</th><th>状态</th><th>操作</th></tr>
+    </thead>
+    <tbody id="tb"></tbody>
+  </table>
+
+  <div class="flex" style="gap:10px; align-items:center; justify-content:flex-end; margin-top:10px">
+    <label class="small" style="color:var(--muted)">每页</label>
+    <select class="input" id="pageSize" style="max-width:90px">
+      <option value="10">10</option>
+      <option value="20">20</option>
+      <option value="50">50</option>
+    </select>
+    <button class="btn secondary" id="prevPage">上一页</button>
+    <span class="small" id="pageInfo">-</span>
+    <button class="btn secondary" id="nextPage">下一页</button>
+  </div>
 </div>
-<div class="modal-backdrop" id="dlg"><div class="modal"><div class="title">新增告警</div><div class="row"><input class="input" id="lv" placeholder="级别 如 WARN/ERROR"></div><div class="row"><input class="input" id="ti" placeholder="标题"></div><div class="row"><input class="input" id="ms" placeholder="内容"></div><div class="actions"><button class="btn secondary" id="cancel">取消</button><button class="btn ok" id="ok">确定</button></div></div></div>
+
 <script type="module">
-import {apiGet,apiPost,apiDelete,$} from "{{ url_for('static', path='assets/common.js') }}";
-const tb=$('#tb'),dlg=$('#dlg'),lv=$('#lv'),ti=$('#ti'),ms=$('#ms'); const show=()=>dlg.classList.add('show'), hide=()=>dlg.classList.remove('show'); async function load(){ const r=await apiGet('/api/alerts'); tb.innerHTML=r.items.map(x=>`<tr><td>${x.id}</td><td>${x.level}</td><td>${x.title}</td><td>${x.message||''}</td><td>${x.created_at}</td><td>${x.acknowledged?'已确认':'未确认'}</td><td><button class='btn ok' data-id='${x.id}' data-act='ack'>确认</button> <button class='btn danger' data-id='${x.id}' data-act='del'>删除</button></td></tr>`).join(''); } document.body.addEventListener('click', async e=>{const t=e.target.closest('button'); if(!t)return; const id=t.dataset.id, act=t.dataset.act; if(act==='ack'){ await apiPost('/api/alerts/'+id+'/ack',{}); load(); } if(act==='del'){ await apiDelete('/api/alerts/'+id); load(); } }); document.getElementById('new').onclick=()=>{lv.value='WARN';ti.value='';ms.value='';show();}; document.getElementById('cancel').onclick=hide; document.getElementById('ok').onclick=async()=>{ await apiPost('/api/alerts',{level:lv.value,title:ti.value,message:ms.value}); hide(); load();}; load();
+import {apiGet, apiPost, apiDelete, $} from "{{ url_for('static', path='assets/common.js') }}";
+
+const tb=$('#tb');
+const fLevel=$('#fLevel'), fAck=$('#fAck'), doSearch=$('#doSearch'), doReset=$('#doReset');
+const pageSizeSel=$('#pageSize'), prevBtn=$('#prevPage'), nextBtn=$('#nextPage');
+const pageInfo=$('#pageInfo'), sumInfo=$('#sumInfo');
+let page=1, limit=10, total=0;
+
+function levelBadge(level){
+  const lv = String(level||'').toUpperCase();
+  const cls = lv==='CRITICAL' ? 'lv-critical' : lv==='ERROR' ? 'lv-error' : lv==='WARN' ? 'lv-warn' : 'lv-info';
+  return `<span class="badge ${cls}">${lv||'-'}</span>`;
+}
+function statusBadge(ack){
+  return ack ? `<span class="badge st-ack">已确认</span>` : `<span class="badge st-open">未确认</span>`;
+}
+
+async function load(){
+  const q = new URLSearchParams();
+  q.set('page', String(page)); q.set('limit', String(limit));
+  const lvVal = (fLevel?.value||'').trim(); if (lvVal) q.set('level', lvVal);
+  const ackVal = (fAck?.value||'').trim(); if (ackVal!=='') q.set('ack', ackVal);
+  const r = await apiGet('/api/alerts?'+q.toString());
+  total = Number(r.total||0);
+  tb.innerHTML = (r.items||[]).map(x=>{
+    const ops = (x.acknowledged ? '' : `<button class='btn ok' data-id='${x.id}' data-act='ack'>确认</button> `)
+              + `<button class='btn danger' data-id='${x.id}' data-act='del'>删除</button>`;
+    return `<tr>
+      <td>${x.id}</td>
+      <td>${levelBadge(x.level)}</td>
+      <td>${x.title||''}</td>
+      <td>${x.message||''}</td>
+      <td>${x.created_at||''}</td>
+      <td>${statusBadge(!!x.acknowledged)}</td>
+      <td>${ops}</td>
+    </tr>`;
+  }).join('');
+  const pages = Math.max(1, Math.ceil(total/Math.max(1,limit)));
+  page = Math.min(Math.max(1,page), pages);
+  pageInfo.textContent = `第 ${page} / ${pages} 页`;
+  sumInfo.textContent = `合计 ${total} 条`;
+  prevBtn.disabled = (page<=1);
+  nextBtn.disabled = (page>=pages);
+}
+
+document.body.addEventListener('click', async (e)=>{
+  const t = e.target.closest('button'); if(!t) return;
+  const id = t.dataset.id, act = t.dataset.act;
+  if (act==='ack'){ await apiPost(`/api/alerts/${id}/ack`, {}); await load(); }
+  if (act==='del'){ await apiDelete(`/api/alerts/${id}`); await load(); }
+});
+
+doSearch?.addEventListener('click', ()=>{ page=1; load(); });
+doReset?.addEventListener('click', ()=>{ if(fLevel) fLevel.value=''; if(fAck) fAck.value=''; page=1; load(); });
+pageSizeSel?.addEventListener('change', ()=>{ limit = Number(pageSizeSel.value||10)||10; page=1; load(); });
+prevBtn?.addEventListener('click', ()=>{ if(page>1){ page--; load(); } });
+nextBtn?.addEventListener('click', ()=>{ page++; load(); });
+
+// init
+limit = Number(pageSizeSel?.value||10)||10;
+load();
 </script>
 {% endblock %}
+

@@ -28,6 +28,12 @@ a{color:var(--brand);text-decoration:none}
 .grid{display:grid;gap:12px}.grid.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid.cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.grid.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
 .kv{display:grid;grid-template-columns:140px 1fr;gap:6px 12px}
 .badge{padding:2px 8px;border-radius:999px;border:1px solid var(--border);font-size:12px;display:inline-block}
+.badge.lv-info{ color: var(--brand); border-color: var(--brand); }
+.badge.lv-warn{ color: var(--warn); border-color: var(--warn); }
+.badge.lv-error{ color: var(--danger); border-color: var(--danger); }
+.badge.lv-critical{ color:#fff; background: var(--danger); border-color: var(--danger); }
+.badge.st-open{ color: var(--danger); border-color: var(--danger); }
+.badge.st-ack{ color: var(--ok); border-color: var(--ok); }
 .footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 .login-wrap{max-width:420px;margin:12vh auto;background:var(--layer);border:1px solid var(--border);border-radius:12px;padding:20px}
 .flex{display:flex;gap:10px;align-items:center}.right{text-align:right}.mt-2{margin-top:8px}.mt-3{margin-top:12px}.mt-4{margin-top:16px}.mt-6{margin-top:24px}.small{color:var(--muted);font-size:12px}

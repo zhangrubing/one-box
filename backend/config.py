@@ -8,7 +8,8 @@ APP_ENV = os.environ.get("APP_ENV", "v1.0")
 
 # project root (repo root): backend/config.py -> backend -> repo_root
 BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / "app.db"
+# Use DB at repo root to avoid missing directories; ensure it's a str for sqlite
+DB_PATH = str(BASE_DIR / "data/app.db")
 
 # Exclude noisy/virtual mounts from Linux storage detail
 EXCLUDED_MOUNT_PREFIXES = [
@@ -17,4 +18,3 @@ EXCLUDED_MOUNT_PREFIXES = [
     '/var/lib/kubelet/', '/var/lib/flatpak/', '/run/user/',
     '/var/lib/lxc/', '/var/lib/lxd/', '/var/lib/libvirt/', '/var/lib/podman/'
 ]
-
