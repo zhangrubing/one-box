@@ -97,12 +97,12 @@ html[data-theme="light"] .nav a span { color: unset !important; }
 html:not([data-theme="light"]) input[type="date"],
 html:not([data-theme="light"]) input[type="time"],
 html:not([data-theme="light"]) input[type="datetime-local"] {
-  color-scheme: dark;
+  color-scheme: light;
 }
 html[data-theme="light"] input[type="date"],
 html[data-theme="light"] input[type="time"],
 html[data-theme="light"] input[type="datetime-local"] {
-  color-scheme: light;
+  color-scheme: dark;
 }
 /* WebKit calendar/clock icon tint */
 /* Dark theme: force white-looking icons */
