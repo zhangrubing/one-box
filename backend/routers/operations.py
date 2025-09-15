@@ -1,8 +1,9 @@
-import subprocess
+import subprocess, platform, shutil
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from ..deps import require_admin
 from ..web import render
+from ..utils.audit import audit_log
 
 
 router = APIRouter()
@@ -63,3 +64,35 @@ async def api_ops_run(cmd: str, user: dict = Depends(require_admin())):
     except Exception as e:
         out = str(e)
     return {"output": out}
+
+
+@router.post("/api/ops/poweroff")
+async def api_poweroff(request: Request, user: dict = Depends(require_admin())):
+    if platform.system() != "Linux":
+        raise HTTPException(status_code=400, detail="仅支持 Linux")
+    cmd = ["systemctl", "poweroff"] if shutil.which("systemctl") else ["shutdown", "-h", "now"]
+    try:
+        subprocess.Popen(cmd)
+        try:
+            await audit_log(user.get("username", ""), "poweroff", "发起关机", request)
+        except Exception:
+            pass
+        return {"ok": True, "message": "关机命令已发送（Linux）"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"执行失败: {e}")
+
+
+@router.post("/api/ops/reboot")
+async def api_reboot(request: Request, user: dict = Depends(require_admin())):
+    if platform.system() != "Linux":
+        raise HTTPException(status_code=400, detail="仅支持 Linux")
+    cmd = ["systemctl", "reboot"] if shutil.which("systemctl") else ["shutdown", "-r", "now"]
+    try:
+        subprocess.Popen(cmd)
+        try:
+            await audit_log(user.get("username", ""), "reboot", "发起重启", request)
+        except Exception:
+            pass
+        return {"ok": True, "message": "重启命令已发送（Linux）"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"执行失败: {e}")
