@@ -1,23 +1,9 @@
 {% extends "base.html" %}{% set page_title="数据报表" %}{% block content %}
 <div class="card">
-  <div class="section-title"><span>时间与指标</span></div>
-  <div class="mt-2" style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
-    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:nowrap">
-      <label>开始</label>
-      <input type="datetime-local" class="input" id="start" style="width:260px">
-      <label>结束</label>
-      <input type="datetime-local" class="input" id="end" style="width:260px">
-      <button class="btn" id="btn-go">查询</button>
-    </div>
-    <div style="display:flex;gap:.5rem;align-items:center">
-      <span class="muted">快捷：</span>
-      <button class="btn secondary" data-range="1h">近1小时</button>
-      <button class="btn secondary" data-range="6h">近6小时</button>
-      <button class="btn secondary" data-range="24h">近24小时</button>
-      <button class="btn secondary" data-range="7d">近7天</button>
-    </div>
-  </div>
-  <div class="mt-2" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+  <div class="section-title"><span>筛选条件</span></div>
+
+  <!-- Row 1: 指标切换 + 导出 -->
+  <div class="mt-2" style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
     <span class="muted">指标：</span>
     <div class="seg" id="metricTabs">
       <button data-m="cpu" class="on">CPU</button>
@@ -28,8 +14,27 @@
       <button data-m="diskio">磁盘 IO</button>
       <button data-m="net_total">网络</button>
     </div>
-    <a id="dl-active" class="btn secondary" style="margin-left:auto" target="_blank">导出 CSV</a>
+    <div style="margin-left:auto;display:flex;gap:.5rem;align-items:center">
+      <a id="dl-active" class="btn secondary" target="_blank">导出 CSV</a>
+    </div>
   </div>
+
+  <!-- Row 2: 时间 + 快捷范围 + 查询 -->
+  <div class="mt-2" style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
+    <label>开始</label>
+    <input type="datetime-local" class="input" id="start" style="width:260px">
+    <span class="muted">至</span>
+    <label>结束</label>
+    <input type="datetime-local" class="input" id="end" style="width:260px">
+    <div class="seg" id="quickRanges">
+      <button class="on" data-range="1h">近1小时</button>
+      <button data-range="6h">近6小时</button>
+      <button data-range="24h">近24小时</button>
+      <button data-range="7d">近7天</button>
+    </div>
+    <button class="btn" id="btn-go" style="margin-left:auto">查询</button>
+  </div>
+
   <div class="mt-1 muted" id="range-note"></div>
   <div class="mt-1 muted" id="summary"></div>
 </div>
@@ -47,6 +52,9 @@ const state = { active:'cpu', data:null };
 function toEpoch(input){ const v=input.value; if(!v) return null; const d=new Date(v); return Math.floor(d.getTime()/1000); }
 function setRangeHours(hours){ const now=new Date(); const start=new Date(now.getTime()-hours*3600*1000); const fmt=(d)=>{ const pad=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }; $('#start').value=fmt(start); $('#end').value=fmt(now); }
 function human(ts){ return new Date((ts||0)*1000).toLocaleString(); }
+// Format datetime-local value to normal date string: YYYY-MM-DD HH:MM
+function fmtLocalInput(v){ if(!v) return ''; const d=new Date(v); const pad=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function updateRangeNote(){ const s=$('#start').value, e=$('#end').value; document.getElementById('range-note').textContent = `查询范围：${fmtLocalInput(s)} - ${fmtLocalInput(e)}`; }
 
 function setExportLink(){ const qs=(p)=>Object.entries(p).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&'); const range={ start: $('#start').value, end: $('#end').value }; $('#dl-active').href = `/api/reports/export.csv?${qs({metric: state.active, ...range})}`; }
 
@@ -63,11 +71,16 @@ function renderActive(){
   setExportLink();
 }
 
-async function load(){ const s=toEpoch($('#start')); const e=toEpoch($('#end')); const url=`/api/reports/series?start=${s||''}&end=${e||''}`; const r=await apiGet(url); state.data=r; $('#range-note').textContent = `查询范围：${$('#start').value} - ${$('#end').value}`; $('#summary').textContent = `磁盘 IO 平均 ${(r.summary?.disk_avg||0).toFixed(1)} MB/s；GPU 利用率均值 ${(r.summary?.gpu_util_avg||0).toFixed(1)}% / 温度均值 ${(r.summary?.gpu_temp_avg||0).toFixed(0)}℃；网络(总计) 平均下行 ${(r.summary?.net_rx_avg||0).toFixed(1)} KB/s，上行 ${(r.summary?.net_tx_avg||0).toFixed(1)} KB/s，延迟 ${(r.summary?.latency_avg||0).toFixed(0)} ms`; renderActive(); }
+async function load(){ const s=toEpoch($('#start')); const e=toEpoch($('#end')); const url=`/api/reports/series?start=${s||''}&end=${e||''}`; const r=await apiGet(url); state.data=r; document.getElementById('range-note').textContent = `查询范围：${fmtLocalInput($('#start').value)} - ${fmtLocalInput($('#end').value)}`; document.getElementById('summary').textContent = `磁盘 IO 平均 ${(r.summary?.disk_avg||0).toFixed(1)} MB/s；GPU 利用率均值 ${(r.summary?.gpu_util_avg||0).toFixed(1)}% / 温度均值 ${(r.summary?.gpu_temp_avg||0).toFixed(0)}℃；网络(总计) 平均下行 ${(r.summary?.net_rx_avg||0).toFixed(1)} KB/s，上行 ${(r.summary?.net_tx_avg||0).toFixed(1)} KB/s，延迟 ${(r.summary?.latency_avg||0).toFixed(0)} ms`; renderActive(); }
 
 // init
-setRangeHours(1); $('#btn-go').onclick=load; document.querySelectorAll('button[data-range]').forEach(btn=>{ btn.onclick=()=>{ const v=btn.getAttribute('data-range'); if(v.endsWith('h')) setRangeHours(parseInt(v)); else if(v.endsWith('d')) setRangeHours(parseInt(v)*24); load(); }; });
+setRangeHours(1);
+$('#btn-go').onclick=()=>{ load().then(updateRangeNote); };
+document.querySelectorAll('#quickRanges button[data-range]').forEach(btn=>{
+  btn.onclick=()=>{ document.querySelectorAll('#quickRanges button').forEach(x=>x.classList.remove('on')); btn.classList.add('on'); const v=btn.getAttribute('data-range'); if(v.endsWith('h')) setRangeHours(parseInt(v)); else if(v.endsWith('d')) setRangeHours(parseInt(v)*24); load().then(updateRangeNote); };
+});
 document.getElementById('metricTabs').addEventListener('click', (e)=>{ const b=e.target.closest('button'); if(!b) return; const tabs=document.querySelectorAll('#metricTabs button'); tabs.forEach(x=>x.classList.remove('on')); b.classList.add('on'); state.active=b.getAttribute('data-m'); renderActive(); });
-load();
+load().then(updateRangeNote);
 </script>
 {% endblock %}
+
