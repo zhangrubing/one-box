@@ -1,3 +1,19 @@
 {% extends "base.html" %}{% set page_title="关于" %}{% block content %}
-<div class="card">关于：FastAPI + Jinja2 + SSE · 原生 JS · 明/暗主题。默认管理员 admin/admin123（请尽快修改）。<br>本版对明亮模式做了全量覆盖修复，确保全站一致。</div>
+<div class="card">
+  <div class="section-title"><span>关于本机</span></div>
+  <div class="kv">
+    <div>本机序列号</div>
+    <div id="serial">-</div>
+  </div>
+</div>
+
+<script type="module">
+import {apiGet,$} from "{{ url_for('static', path='assets/common.js') }}";
+try{
+  const r = await apiGet('/api/system/serial');
+  const v = (r && r.serial) ? r.serial : '-';
+  document.getElementById('serial').textContent = v || '-';
+}catch(e){ document.getElementById('serial').textContent='-'; }
+</script>
 {% endblock %}
+

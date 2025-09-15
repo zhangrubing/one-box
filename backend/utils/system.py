@@ -30,6 +30,75 @@ def _cpu_model() -> str:
     return platform.processor() or ""
 
 
+def get_machine_serial() -> Optional[str]:
+    """Best-effort to get chassis/system serial number.
+    Returns a string or None if not available.
+    """
+    try:
+        sys = platform.system()
+        if sys == "Linux":
+            for p in (
+                "/sys/class/dmi/id/product_serial",
+                "/sys/devices/virtual/dmi/id/product_serial",
+                "/sys/class/dmi/id/board_serial",
+                "/sys/devices/virtual/dmi/id/product_uuid",
+            ):
+                try:
+                    if os.path.exists(p):
+                        with open(p, "r", encoding="utf-8", errors="ignore") as f:
+                            val = (f.read() or "").strip()
+                            if val and val.lower() != "unknown":
+                                return val
+                except Exception:
+                    pass
+            try:
+                if os.path.exists("/etc/machine-id"):
+                    with open("/etc/machine-id", "r", encoding="utf-8", errors="ignore") as f:
+                        val = (f.read() or "").strip()
+                        if val:
+                            return val
+            except Exception:
+                pass
+        elif sys == "Windows":
+            try:
+                out = subprocess.check_output(["wmic", "bios", "get", "serialnumber"], timeout=3).decode(errors="ignore")
+                lines = [l.strip() for l in out.splitlines() if l.strip() and "serial" not in l.lower()]
+                if lines:
+                    return lines[0]
+            except Exception:
+                pass
+            try:
+                out = subprocess.check_output([
+                    "powershell", "-NoProfile", "-Command",
+                    "(Get-CimInstance Win32_BIOS).SerialNumber"
+                ], timeout=3).decode(errors="ignore")
+                val = (out or "").strip()
+                if val:
+                    return val
+            except Exception:
+                pass
+        elif sys == "Darwin":
+            try:
+                out = subprocess.check_output(["ioreg", "-l"], timeout=3).decode(errors="ignore")
+                import re as _re
+                m = _re.search(r'"IOPlatformSerialNumber"\s*=\s*"([^"]+)"', out)
+                if m:
+                    return m.group(1)
+            except Exception:
+                pass
+            try:
+                out = subprocess.check_output(["system_profiler", "SPHardwareDataType"], timeout=5).decode(errors="ignore")
+                import re as _re
+                m = _re.search(r"Serial Number.*: (.+)", out)
+                if m:
+                    return m.group(1).strip()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return None
+
+
 def _gpu_info() -> Dict[str, Any]:
     global GPU_PRESENT
     info: Dict[str, Any] = {"gpus": []}

@@ -3,7 +3,7 @@ import psutil
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from ..deps import require_user
-from ..utils.system import _cpu_model
+from ..utils.system import _cpu_model, get_machine_serial
 from ..web import render
 
 
@@ -51,3 +51,8 @@ async def api_system_summary(request: Request, user: dict = Depends(require_user
             disks.append({"device": p.device, "mountpoint": p.mountpoint, "fstype": p.fstype, "total": None, "used": None, "percent": None})
     return {"os": os_info, "cpu": cpu_info, "memory": mem_info, "disks": disks}
 
+
+@router.get("/api/system/serial")
+async def api_system_serial(user: dict = Depends(require_user)):
+    """Return best-effort machine serial number."""
+    return {"serial": get_machine_serial()}

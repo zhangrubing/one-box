@@ -29,6 +29,18 @@ ALLOWED_CMDS = {
     ],
     "nvidia-smi pmon": ["nvidia-smi", "pmon", "-c", "1"],
     "nvidia-smi dmon": ["nvidia-smi", "dmon", "-c", "1"],
+    # NVIDIA: Serial/UUID and ECC
+    "nvidia-smi --query-serial": [
+        "nvidia-smi",
+        "--query-gpu=serial,uuid",
+        "--format=csv,noheader,nounits",
+    ],
+    "nvidia-smi -q -d ECC": ["nvidia-smi", "-q", "-d", "ECC"],
+    "nvidia-smi --query-ecc": [
+        "nvidia-smi",
+        "--query-gpu=ecc.mode.current,ecc.mode.pending",
+        "--format=csv,noheader,nounits",
+    ],
     # CUDA toolkit (if present)
     "nvcc --version": ["nvcc", "--version"],
     # AMD GPUs (if present)
@@ -51,4 +63,3 @@ async def api_ops_run(cmd: str, user: dict = Depends(require_admin())):
     except Exception as e:
         out = str(e)
     return {"output": out}
-
