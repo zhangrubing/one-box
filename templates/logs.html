@@ -1,9 +1,84 @@
-{% extends "base.html" %}{% set page_title="日志查看" %}{% block content %}
-<div class="card"><div class="flex"><div class="section-title"><span>系统日志</span></div><div style="margin-left:auto;"><input class="input" id="q" placeholder="关键字"> <button class="btn" id="search">搜索</button></div></div>
-<table class="table mt-3"><thead><tr><th>ID</th><th>分类</th><th>内容</th><th>时间</th></tr></thead><tbody id="tb"></tbody></table>
+﻿{% extends "base.html" %}{% set page_title="系统日志" %}{% block content %}
+<div class="card">
+  <div class="section-title"><span>操作系统级日志</span></div>
+  <div class="mt-2" style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
+    <div style="display:flex;align-items:center;gap:.35rem;white-space:nowrap">
+      <label>开始</label>
+      <input type="datetime-local" class="input" id="start" style="width:240px">
+    </div>
+    
+    <div style="display:flex;align-items:center;gap:.35rem;white-space:nowrap">
+      <label>结束</label>
+      <input type="datetime-local" class="input" id="end" style="width:240px">
+    </div>
+    <div style="flex-basis:100%; height:0"></div>
+    <div style="display:flex;align-items:center;gap:.35rem;white-space:nowrap">
+      <label>级别</label>
+      <select id="level" class="input">
+        <option value="">全部</option>
+        <option value="error">ERROR</option>
+        <option value="warning">WARN</option>
+        <option value="notice">NOTICE</option>
+        <option value="info">INFO</option>
+        <option value="debug">DEBUG</option>
+      </select>
+    </div>
+    <div style="flex-basis:100%; height:0"></div>
+
+    <div style="display:flex;align-items:center;gap:.35rem;white-space:nowrap">
+      <label>日志</label>
+      <select id="logname" class="input">
+        <option value="">(自动)</option>
+        <option value="System">System</option>
+        <option value="Application">Application</option>
+        <option value="Security">Security</option>
+      </select>
+    </div>
+    <label style="display:flex;align-items:center;gap:.35rem;white-space:nowrap"><input type="checkbox" id="kernel">仅内核</label>
+    <div style="flex-basis:100%; height:0"></div>
+    <div style="display:flex;align-items:center;gap:.35rem;min-width:160px;flex:1 1 auto">
+      <label>关键字</label>
+      <input class="input" id="q" placeholder="关键字" style="flex:1 1 auto; min-width:100px; width: 200px;">
+    </div>
+    <div style="display:flex;gap:.5rem;align-items:center;margin-left:auto">
+      <button class="btn" id="search">查询</button>
+      <a class="btn secondary" id="download" target="_blank">导出 CSV</a>
+    </div>
+  </div>
 </div>
+
+<div class="card" style="margin-top: 10px;">
+  <div class="section-title"><span>日志列表</span><span class="muted" id="count" style="margin-left:auto"></span></div>
+  <table class="table mt-2"><thead><tr><th style="width:170px">时间</th><th style="width:90px">级别</th><th style="width:220px">来源</th><th>内容</th></tr></thead><tbody id="tb"></tbody></table>
+</div>
+
 <script type="module">
 import {apiGet,$} from "{{ url_for('static', path='assets/common.js') }}";
-const tb=$('#tb'), q=$('#q'); async function load(){ const r=await apiGet('/api/logs?q='+(encodeURIComponent(q.value||''))); tb.innerHTML=r.items.map(x=>`<tr><td>${x.id}</td><td>${x.category}</td><td>${x.message}</td><td>${x.created_at}</td></tr>`).join(''); } document.getElementById('search').onclick=load; load();
+
+function toEpoch(input){ const v=input.value; if(!v) return null; const d=new Date(v); return Math.floor(d.getTime()/1000); }
+function setRangeHours(hours){ const now=new Date(); const start=new Date(now.getTime()-hours*3600*1000); const fmt=(d)=>{ const pad=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; }; $('#start').value=fmt(start); $('#end').value=fmt(now); }
+function qs(p){ return Object.entries(p).filter(([k,v])=>v!==undefined&&v!==null&&v!=='').map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&'); }
+
+async function load(){
+  const p = {
+    start: toEpoch($('#start')),
+    end: toEpoch($('#end')),
+    level: $('#level').value,
+    kernel: $('#kernel').checked ? '1' : '',
+    logname: $('#logname').value,
+    q: $('#q').value.trim(),
+    limit: 500,
+  };
+  const url = '/api/oslogs?' + qs(p);
+  const r = await apiGet(url);
+  const rows = (r.items||[]);
+  $('#tb').innerHTML = rows.map(x=>`<tr><td>${x.time||''}</td><td>${x.level||''}</td><td>${x.source||''}</td><td style="white-space:pre-wrap">${(x.message||'').replace(/</g,'&lt;')}</td></tr>`).join('');
+  $('#count').textContent = `共 ${r.count||rows.length} 条`;
+  $('#download').href = '/api/oslogs.csv?' + qs(p);
+}
+
+setRangeHours(1);
+$('#search').onclick = load;
+load();
 </script>
 {% endblock %}

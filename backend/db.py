@@ -1,4 +1,6 @@
+import os
 import sqlite3
+from pathlib import Path
 import aiosqlite
 from .config import DB_PATH
 from .crypto import hash_password
@@ -157,6 +159,15 @@ async def ensure_column(db, table: str, col: str, decl: str):
 
 
 async def init_db():
+    # Ensure DB directory exists (e.g., BASE_DIR/data)
+    try:
+        Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # As a fallback, try os.makedirs
+        try:
+            os.makedirs(Path(DB_PATH).parent, exist_ok=True)
+        except Exception:
+            pass
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(SCHEMA_SQL)
         # indexes for time-range queries
