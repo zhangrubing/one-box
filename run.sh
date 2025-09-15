@@ -9,4 +9,4 @@ pip install -U pip || true
 pip config set global.index-url $PYPI_MIRROR || true
 pip install -r requirements.txt || pip install -r requirements.txt -i https://pypi.org/simple
 export APP_ENV=${APP_ENV:-dev} APP_SECRET=${APP_SECRET:-"change-this-secret"} SAMPLE_INTERVAL=${SAMPLE_INTERVAL:-5}
-exec uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-8000} --reload --proxy-headers
+exec uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-9000} --reload --proxy-headers

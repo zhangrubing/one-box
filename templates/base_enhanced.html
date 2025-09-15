@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>!function(){try{var t=localStorage.getItem("theme");if(!t){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}document.documentElement.setAttribute("data-theme",t)}catch(e){}}();</script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={darkMode:["class","[data-theme='dark']"]}</script>
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/style.css?v=1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='assets/overrides.css') }}">
+  <title>一体机监控 - {{ page_title or '' }}</title>
+</head>
+<body>
+<div class="container">
+  <aside class="sidebar">
+    <div class="brand"><img src="{{ url_for('static', path='assets/logo.svg') }}" alt="logo"> <span>英智 · 一体机监控</span></div>
+    <div class="side-caption">OBM-单机版</div>
+    <nav class="nav">
+      {% set navs = [
+        ('/dashboard','仪表盘','home','m-home'),
+        ('/enhanced-monitoring','增强监控','chart','m-enhanced'),
+        ('/hardware','硬件及系统','chip','m-hardware'),
+        ('/gpu','GPU详情','gpu','m-gpu'),
+        ('/network','网络接口','net','m-network'),
+        ('/storage','存储与磁盘','drive','m-storage'),
+        ('/alerts','告警中心','alert','m-alerts'),
+        ('/operations','运维操作','terminal','m-operations'),
+        ('/users','用户管理','user','m-users'),
+        ('/reports','数据报表','report','m-reports'),
+        ('/logs','系统日志','logs','m-logs'),
+        ('/audit','审计日志','audit','m-audit'),
+        ('/about','关于','about','m-about')
+      ] %}
+      {% for href,label,icon,klass in navs %}
+        <a href="{{ href }}" class="{{ 'active' if request.url.path==href else '' }} {{ klass }}">
+          <svg class="ico"><use href="{{ url_for('static', path='assets/icons.svg') }}#{{ icon }}"></use></svg>
+          <span>{{ label }}</span>
+        </a>
+      {% endfor %}
+    </nav>
+    <div class="footer">登录用户：{{ user.username if user else '-' }}</div>
+  </aside>
+  <main>
+    <div class="header">
+      <div><strong>{{ page_title or '' }}</strong></div>
+      <div class="flex">
+        <button class="btn secondary" id="theme-toggle">�� 主题</button>
+        <button class="btn danger" onclick="logout()">退出</button>
+      </div>
+    </div>
+    <div class="content">{% block content %}{% endblock %div>
+  </main>
+</div>
+<script src="{{ url_for('static', path='assets/common.js') }}"></script>
+<script>
+document.getElementById('theme-toggle').addEventListener('click', function() {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme');
+  const newTheme = current === 'light' ? 'dark' : 'light';
+  html.setAttribute('data-theme', newTheme);
+  try { localStorage.setItem('theme', newTheme); } catch(e) {}
+});
+function logout() {
+  if (confirm('确定要退出登录吗？')) {
+    fetch('/api/logout', { method: 'POST' }).then(() => {
+      location.href = '/login';
+    });
+  }
+}
+</script>
+</body>
+</html>

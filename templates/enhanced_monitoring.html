@@ -1,0 +1,251 @@
+{% extends "base_enhanced.html" %}{% set page_title="增强监控" %}{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4" id="kpis">
+  <div class="kpi card cpu">
+    <div class="kpi-label">CPU 使用率</div>
+    <div class="kpi-value" id="cpuVal">-</div>
+    <div class="kpi-pill"><span id="cpuInfo">-</span></div>
+  </div>
+  <div class="kpi card mem">
+    <div class="kpi-label">内存占用</div>
+    <div class="kpi-value" id="memVal">-</div>
+    <div class="kpi-pill"><span id="memTotal">-</span></div>
+  </div>
+  <div class="kpi card gpu">
+    <div class="kpi-label">GPU 总体利用</div>
+    <div class="kpi-value" id="gpuVal">-</div>
+    <div class="kpi-pill"><span id="gpuInfo">-</span></div>
+  </div>
+  <div class="kpi card alerts">
+    <div class="kpi-label">活跃告警</div>
+    <div class="kpi-value" id="alertVal">-</div>
+    <div class="kpi-pill"><span id="alertInfo">-</span></div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+  <div class="card">
+    <div class="section-title"><span>实时系统状态</span></div>
+    <div id="systemStatus" class="text-sm">
+      <div>系统负载: <span id="loadAvg">-</span></div>
+      <div>进程数量: <span id="processCount">-</span></div>
+      <div>运行时间: <span id="uptime">-</span></div>
+      <div>磁盘IO: <span id="diskIO">-</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title"><span>网络统计</span></div>
+    <div id="networkStats" class="text-sm">
+      <div>接口数量: <span id="interfaceCount">-</span></div>
+      <div>总发送: <span id="totalSent">-</span></div>
+      <div>总接收: <span id="totalRecv">-</span></div>
+      <div>错误包: <span id="errorPackets">-</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+  <div class="card">
+    <div class="section-title"><span>CPU 使用率趋势</span></div>
+    <canvas id="cpuChart" style="width:100%;height:200px"></canvas>
+  </div>
+  <div class="card">
+    <div class="section-title"><span>内存使用率趋势</span></div>
+    <canvas id="memChart" style="width:100%;height:200px"></canvas>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+  <div class="card">
+    <div class="section-title"><span>GPU 利用率趋势</span></div>
+    <canvas id="gpuUtilChart" style="width:100%;height:200px"></canvas>
+  </div>
+  <div class="card">
+    <div class="section-title"><span>GPU 温度趋势</span></div>
+    <canvas id="gpuTempChart" style="width:100%;height:200px"></canvas>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+  <div class="card">
+    <div class="section-title"><span>最近告警</span> <button class="btn" id="refreshAlerts" style="float:right">刷新</button></div>
+    <table class="table"><thead><tr><th>级别</th><th>标题</th><th>时间</th><th>操作</th></tr></thead><tbody id="alertsTable"></tbody></table>
+  </div>
+  <div class="card">
+    <div class="section-title"><span>进程统计</span> <button class="btn" id="refreshProcesses" style="float:right">刷新</button></div>
+    <div id="processStats" class="text-sm">
+      <div>总进程数: <span id="totalProcesses">-</span></div>
+      <div>运行中: <span id="runningProcesses">-</span></div>
+      <div>睡眠中: <span id="sleepingProcesses">-</span></div>
+      <div>僵尸进程: <span id="zombieProcesses">-</span></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import {mountSSE, apiGet, $, formatBytes} from "{{ url_for('static', path='assets/common.js') }}";
+import { MiniLine } from "{{ url_for('static', path='assets/chart.js') }}";
+
+// 初始化图表
+const cpuChart = new MiniLine('cpuChart', {max: 100, yMin: 0, yMax: 100, axes: true, ticks: [0, 20, 40, 60, 80, 100]});
+const memChart = new MiniLine('memChart', {max: 100, yMin: 0, yMax: 100, axes: true, ticks: [0, 20, 40, 60, 80, 100]});
+const gpuUtilChart = new MiniLine('gpuUtilChart', {max: 100, yMin: 0, yMax: 100, axes: true, ticks: [0, 20, 40, 60, 80, 100]});
+const gpuTempChart = new MiniLine('gpuTempChart', {max: 100, yMin: 0, yMax: 100, axes: true, ticks: [0, 20, 40, 60, 80, 100]});
+
+// 获取DOM元素
+const cpuVal = $("#cpuVal"), memVal = $("#memVal"), gpuVal = $("#gpuVal"), alertVal = $("#alertVal");
+const cpuInfo = $("#cpuInfo"), memTotal = $("#memTotal"), gpuInfo = $("#gpuInfo"), alertInfo = $("#alertInfo");
+const loadAvg = $("#loadAvg"), processCount = $("#processCount"), uptime = $("#uptime"), diskIO = $("#diskIO");
+const interfaceCount = $("#interfaceCount"), totalSent = $("#totalSent"), totalRecv = $("#totalRecv"), errorPackets = $("#errorPackets");
+const alertsTable = $("#alertsTable"), processStats = $("#processStats");
+const totalProcesses = $("#totalProcesses"), runningProcesses = $("#runningProcesses"), sleepingProcesses = $("#sleepingProcesses"), zombieProcesses = $("#zombieProcesses");
+
+// 数据存储
+let systemData = {};
+let alertData = [];
+let processData = {};
+
+// 更新KPI显示
+function updateKPIs(data) {
+  cpuVal.textContent = Number(data.cpu_percent || 0).toFixed(0) + '%';
+  memVal.textContent = Number(data.mem_percent || 0).toFixed(0) + '%';
+  gpuVal.textContent = Number(data.gpu_util_avg || 0).toFixed(0) + '%';
+  
+  memTotal.textContent = (data.mem.total / 1073741824).toFixed(0) + ' GB';
+  cpuInfo.textContent = (data.cpu_cores || 0) + ' 核';
+  gpuInfo.textContent = (data.gpu_count || 0) + ' × GPU';
+}
+
+// 更新系统状态
+function updateSystemStatus(data) {
+  const load = data.load_avg || [0, 0, 0];
+  loadAvg.textContent = `${load[0].toFixed(2)}, ${load[1].toFixed(2)}, ${load[2].toFixed(2)}`;
+  processCount.textContent = data.processes || 0;
+  
+  const uptimeSeconds = Math.floor(Date.now() / 1000) - data.boot_time;
+  const days = Math.floor(uptimeSeconds / 86400);
+  const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+  uptime.textContent = `${days}天 ${hours}小时 ${minutes}分钟`;
+  
+  diskIO.textContent = (data.disk_mb_s || 0).toFixed(1) + ' MB/s';
+}
+
+// 更新网络统计
+function updateNetworkStats(data) {
+  const interfaces = Object.keys(data.network_io || {});
+  interfaceCount.textContent = interfaces.length;
+  
+  let totalSentBytes = 0, totalRecvBytes = 0, totalErrors = 0;
+  interfaces.forEach(iface => {
+    const stats = data.network_io[iface];
+    totalSentBytes += stats.bytes_sent || 0;
+    totalRecvBytes += stats.bytes_recv || 0;
+    totalErrors += (stats.errin || 0) + (stats.errout || 0) + (stats.dropin || 0) + (stats.dropout || 0);
+  });
+  
+  totalSent.textContent = formatBytes(totalSentBytes);
+  totalRecv.textContent = formatBytes(totalRecvBytes);
+  errorPackets.textContent = totalErrors;
+}
+
+// 更新图表
+function updateCharts(data) {
+  cpuChart.push(data.cpu_percent || 0);
+  memChart.push(data.mem_percent || 0);
+  gpuUtilChart.push(data.gpu_util_avg || 0);
+  gpuTempChart.push(data.gpu_temp_avg || 0);
+}
+
+// 加载告警数据
+async function loadAlerts() {
+  try {
+    const response = await apiGet('/api/enhanced/alerts/recent?hours=24');
+    alertData = response || [];
+    
+    // 更新告警KPI
+    const criticalAlerts = alertData.filter(a => ['CRITICAL', 'ERROR', 'SEVERE', 'FATAL'].includes(a.level));
+    alertVal.textContent = criticalAlerts.length;
+    alertInfo.textContent = criticalAlerts.filter(a => !a.acknowledged).length + ' 未确认';
+    
+    // 更新告警表格
+    alertsTable.innerHTML = alertData.slice(0, 10).map(alert => `
+      <tr>
+        <td><span class="tag ${alert.level === 'CRITICAL' ? 'err' : 'warn'}">${alert.level}</span></td>
+        <td>${alert.title}</td>
+        <td>${new Date(alert.created_at).toLocaleString()}</td>
+        <td>
+          ${!alert.acknowledged ? `<button class="btn small" onclick="acknowledgeAlert(${alert.id})">确认</button>` : '已确认'}
+          <button class="btn small" onclick="deleteAlert(${alert.id})">删除</button>
+        </td>
+      </tr>
+    `).join('') || '<tr><td colspan="4">暂无告警</td></tr>';
+  } catch (error) {
+    console.error('Failed to load alerts:', error);
+    alertsTable.innerHTML = '<tr><td colspan="4">加载失败</td></tr>';
+  }
+}
+
+// 加载进程数据
+async function loadProcesses() {
+  try {
+    const response = await apiGet('/api/enhanced/process/info');
+    processData = response || {};
+    
+    totalProcesses.textContent = processData.total || 0;
+    runningProcesses.textContent = processData.status_count?.running || 0;
+    sleepingProcesses.textContent = processData.status_count?.sleeping || 0;
+    zombieProcesses.textContent = processData.status_count?.zombie || 0;
+  } catch (error) {
+    console.error('Failed to load processes:', error);
+  }
+}
+
+// 确认告警
+async function acknowledgeAlert(alertId) {
+  try {
+    await apiGet(`/api/enhanced/alerts/${alertId}/ack`, {method: 'POST'});
+    await loadAlerts();
+  } catch (error) {
+    console.error('Failed to acknowledge alert:', error);
+  }
+}
+
+// 删除告警
+async function deleteAlert(alertId) {
+  try {
+    await apiGet(`/api/enhanced/alerts/${alertId}`, {method: 'DELETE'});
+    await loadAlerts();
+  } catch (error) {
+    console.error('Failed to delete alert:', error);
+  }
+}
+
+// 处理实时数据
+function handleRealtimeData(data) {
+  systemData = data;
+  updateKPIs(data);
+  updateSystemStatus(data);
+  updateNetworkStats(data);
+  updateCharts(data);
+}
+
+// 绑定事件
+$('#refreshAlerts').addEventListener('click', loadAlerts);
+$('#refreshProcesses').addEventListener('click', loadProcesses);
+
+// 启动实时监控
+mountSSE('/sse/metrics', (data, event) => {
+  if (event === 'metrics') {
+    handleRealtimeData(data);
+  }
+});
+
+// 初始加载
+loadAlerts();
+loadProcesses();
+
+// 定期刷新
+setInterval(loadAlerts, 30000); // 30秒刷新告警
+setInterval(loadProcesses, 60000); // 1分钟刷新进程
+</script>
+{% endblock %}

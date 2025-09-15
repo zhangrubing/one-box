@@ -1,0 +1,522 @@
+{% extends "base.html" %}{% set page_title="GPU详情" %}{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4" id="gpuKpis">
+  <div class="kpi card gpu">
+    <div class="kpi-label">GPU 数量</div>
+    <div class="kpi-value" id="gpuCount">-</div>
+    <div class="kpi-pill"><span id="gpuStatus">-</span></div>
+  </div>
+  <div class="kpi card gpu">
+    <div class="kpi-label">平均利用率</div>
+    <div class="kpi-value" id="avgUtilization">-</div>
+    <div class="kpi-pill"><span id="utilizationInfo">-</span></div>
+  </div>
+  <div class="kpi card gpu">
+    <div class="kpi-label">平均温度</div>
+    <div class="kpi-value" id="avgTemperature">-</div>
+    <div class="kpi-pill"><span id="temperatureInfo">-</span></div>
+  </div>
+  <div class="kpi card gpu">
+    <div class="kpi-label">运行进程</div>
+    <div class="kpi-value" id="processCount">-</div>
+    <div class="kpi-pill"><span id="processInfo">-</span></div>
+  </div>
+</div>
+
+<div class="flex" style="gap:10px;align-items:center;margin-top:10px">
+  <span class="small" style="color:var(--muted)">时间范围：</span>
+  <div class="seg" id="timeRangeSeg">
+    <button data-period="1h" class="on">最近1小时</button>
+    <button data-period="6h">最近6小时</button>
+    <button data-period="1d">最近1天</button>
+    <button data-period="7d">最近7天</button>
+    <button data-period="30d">最近30天</button>
+  </div>
+  <button class="btn" id="refreshData" style="margin-left:auto">刷新数据</button>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+  <div class="card">
+    <div class="section-title"><span>GPU 利用率趋势</span></div>
+    <canvas id="utilizationChart" style="width:100%;height:300px"></canvas>
+  </div>
+  <div class="card">
+    <div class="section-title"><span>GPU 温度趋势</span></div>
+    <canvas id="temperatureChart" style="width:100%;height:300px"></canvas>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+  <div class="card">
+    <div class="section-title"><span>GPU 设备信息</span> <button class="btn" id="refreshGpuInfo" style="float:right">刷新</button></div>
+    <div class="overflow-x-auto">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>型号</th>
+            <th>驱动</th>
+            <th>显存</th>
+            <th>使用率</th>
+            <th>温度</th>
+            <th>功耗</th>
+            <th>频率</th>
+          </tr>
+        </thead>
+        <tbody id="gpuTable"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title"><span>GPU 进程信息</span> <button class="btn" id="refreshProcesses" style="float:right">刷新</button></div>
+    <div class="overflow-x-auto">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>GPU</th>
+            <th>PID</th>
+            <th>进程名</th>
+            <th>显存使用</th>
+          </tr>
+        </thead>
+        <tbody id="processTable"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card mt-4">
+  <div class="section-title"><span>GPU 统计信息</span></div>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="statisticsGrid">
+    <div class="text-center">
+      <div class="text-2xl font-bold" id="avgUtilizationStat">-</div>
+      <div class="text-sm text-muted">平均利用率</div>
+    </div>
+    <div class="text-center">
+      <div class="text-2xl font-bold" id="maxUtilizationStat">-</div>
+      <div class="text-sm text-muted">最大利用率</div>
+    </div>
+    <div class="text-center">
+      <div class="text-2xl font-bold" id="avgTemperatureStat">-</div>
+      <div class="text-sm text-muted">平均温度</div>
+    </div>
+    <div class="text-center">
+      <div class="text-2xl font-bold" id="maxTemperatureStat">-</div>
+      <div class="text-sm text-muted">最大温度</div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import {mountSSE, apiGet, $, formatBytes} from "{{ url_for('static', path='assets/common.js') }}";
+import { MiniLine } from "{{ url_for('static', path='assets/chart.js') }}";
+
+// 初始化图表
+const utilizationChart = new MiniLine('utilizationChart', {
+  max: 200, 
+  yMin: 0, 
+  yMax: 100, 
+  axes: true, 
+  ticks: [0, 20, 40, 60, 80, 100],
+  color: '#5b8cff'
+});
+
+const temperatureChart = new MiniLine('temperatureChart', {
+  max: 200, 
+  yMin: 0, 
+  yMax: 100, 
+  axes: true, 
+  ticks: [0, 20, 40, 60, 80, 100],
+  color: '#ff6b6b'
+});
+
+// 获取DOM元素
+const gpuCount = $("#gpuCount"), avgUtilization = $("#avgUtilization"), avgTemperature = $("#avgTemperature"), processCount = $("#processCount");
+const gpuStatus = $("#gpuStatus"), utilizationInfo = $("#utilizationInfo"), temperatureInfo = $("#temperatureInfo"), processInfo = $("#processInfo");
+const gpuTable = $("#gpuTable"), processTable = $("#processTable");
+const avgUtilizationStat = $("#avgUtilizationStat"), maxUtilizationStat = $("#maxUtilizationStat");
+const avgTemperatureStat = $("#avgTemperatureStat"), maxTemperatureStat = $("#maxTemperatureStat");
+
+// 时间范围
+let currentPeriod = '1h';
+
+// 更新KPI显示
+function updateKPIs(data) {
+  const gpus = data.gpus || [];
+  const count = gpus.length;
+  
+  gpuCount.textContent = count;
+  gpuStatus.textContent = count > 0 ? '在线' : '离线';
+  
+  if (count > 0) {
+    const avgUtil = gpus.reduce((sum, gpu) => sum + (gpu.utilization || 0), 0) / count;
+    const avgTemp = gpus.reduce((sum, gpu) => sum + (gpu.temperature || 0), 0) / count;
+    const totalProcesses = gpus.reduce((sum, gpu) => sum + (gpu.processes?.length || 0), 0);
+    
+    avgUtilization.textContent = avgUtil.toFixed(1) + '%';
+    avgTemperature.textContent = avgTemp.toFixed(1) + '°C';
+    processCount.textContent = totalProcesses;
+    
+    utilizationInfo.textContent = `最高 ${Math.max(...gpus.map(g => g.utilization || 0)).toFixed(1)}%`;
+    temperatureInfo.textContent = `最高 ${Math.max(...gpus.map(g => g.temperature || 0)).toFixed(1)}°C`;
+    processInfo.textContent = `${count} 个GPU`;
+  } else {
+    avgUtilization.textContent = '-';
+    avgTemperature.textContent = '-';
+    processCount.textContent = '0';
+    utilizationInfo.textContent = '-';
+    temperatureInfo.textContent = '-';
+    processInfo.textContent = '-';
+  }
+}
+
+// 更新GPU表格
+function updateGpuTable(gpus) {
+  gpuTable.innerHTML = gpus.map(gpu => `
+    <tr>
+      <td>${gpu.index}</td>
+      <td title="${gpu.name}">${gpu.name.length > 20 ? gpu.name.substring(0, 20) + '...' : gpu.name}</td>
+      <td>${gpu.driver_version || '-'}</td>
+      <td>${gpu.memory_total ? (gpu.memory_total / 1024).toFixed(1) + ' GB' : '-'}</td>
+      <td>
+        <div class="flex items-center gap-2">
+          <div class="w-16 bg-gray-200 rounded-full h-2">
+            <div class="bg-blue-500 h-2 rounded-full" style="width: ${gpu.utilization || 0}%"></div>
+          </div>
+          <span>${(gpu.utilization || 0).toFixed(1)}%</span>
+        </div>
+      </td>
+      <td>
+        <span class="${(gpu.temperature || 0) > 80 ? 'text-red-500' : (gpu.temperature || 0) > 70 ? 'text-yellow-500' : 'text-green-500'}">
+          ${gpu.temperature || '-'}°C
+        </span>
+      </td>
+      <td>${gpu.power_draw ? gpu.power_draw.toFixed(1) + 'W' : '-'}</td>
+      <td>${gpu.clock_graphics ? gpu.clock_graphics.toFixed(0) + 'MHz' : '-'}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="8">未检测到GPU</td></tr>';
+}
+
+// 更新进程表格
+function updateProcessTable(processes) {
+  processTable.innerHTML = processes.map(proc => `
+    <tr>
+      <td>GPU ${proc.gpu_index}</td>
+      <td>${proc.pid}</td>
+      <td title="${proc.name}">${proc.name.length > 15 ? proc.name.substring(0, 15) + '...' : proc.name}</td>
+      <td>${proc.memory ? (proc.memory / 1024).toFixed(1) + ' MB' : '-'}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="4">无运行进程</td></tr>';
+}
+
+// 更新统计信息
+function updateStatistics(stats) {
+  avgUtilizationStat.textContent = stats.avg_utilization ? stats.avg_utilization.toFixed(1) + '%' : '-';
+  maxUtilizationStat.textContent = stats.max_utilization ? stats.max_utilization.toFixed(1) + '%' : '-';
+  avgTemperatureStat.textContent = stats.avg_temperature ? stats.avg_temperature.toFixed(1) + '°C' : '-';
+  maxTemperatureStat.textContent = stats.max_temperature ? stats.max_temperature.toFixed(1) + '°C' : '-';
+}
+
+// 更新图表
+function updateCharts(historyData) {
+  if (!historyData || historyData.length === 0) return;
+  
+  // 清空图表
+  utilizationChart.data = [];
+  temperatureChart.data = [];
+  
+  // 添加数据点
+  historyData.forEach(point => {
+    utilizationChart.push(point.gpu_util_avg || 0);
+    temperatureChart.push(point.gpu_temp_avg || 0);
+  });
+  
+  // 设置X轴标签
+  const labels = generateTimeLabels(historyData.length);
+  utilizationChart.setXLabels(labels);
+  temperatureChart.setXLabels(labels);
+}
+
+// 生成时间标签
+function generateTimeLabels(dataLength) {
+  const labels = [];
+  const intervals = Math.max(1, Math.floor(dataLength / 5));
+  
+  for (let i = 0; i < dataLength; i += intervals) {
+    const time = new Date();
+    time.setMinutes(time.getMinutes() - (dataLength - i) * 5); // 假设每5分钟一个数据点
+    labels.push(time.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
+  }
+  
+  return labels;
+}
+
+// 加载GPU信息
+async function loadGpuInfo() {
+  try {
+    const data = await apiGet('/api/gpu/info');
+    updateKPIs(data);
+    updateGpuTable(data.gpus || []);
+  } catch (error) {
+    console.error('Failed to load GPU info:', error);
+  }
+}
+
+// 加载进程信息
+async function loadProcessInfo() {
+  try {
+    const data = await apiGet('/api/gpu/processes');
+    updateProcessTable(data.processes || []);
+  } catch (error) {
+    console.error('Failed to load process info:', error);
+  }
+}
+
+// 加载历史数据
+async function loadHistoryData() {
+  try {
+    const data = await apiGet(`/api/gpu/history?period=${currentPeriod}`);
+    updateCharts(data.data || []);
+    updateStatistics(data.statistics || {});
+  } catch (error) {
+    console.error('Failed to load history data:', error);
+  }
+}
+
+// 加载所有数据
+async function loadAllData() {
+  await Promise.all([
+    loadGpuInfo(),
+    loadProcessInfo(),
+    loadHistoryData()
+  ]);
+}
+
+
+// 更新趋势图表的函数
+async function updateTrendCharts() {
+  try {
+    // 获取利用率趋势数据
+    const utilResponse = await apiGet(`/api/gpu/trends/utilization?period=${currentPeriod}`);
+    if (utilResponse.trends) {
+      updateUtilizationChart(utilResponse.trends);
+    }
+    
+    // 获取温度趋势数据
+    const tempResponse = await apiGet(`/api/gpu/trends/temperature?period=${currentPeriod}`);
+    if (tempResponse.trends) {
+      updateTemperatureChart(tempResponse.trends);
+    }
+  } catch (error) {
+    console.error('Error updating trend charts:', error);
+  }
+}
+
+// 更新利用率图表
+function updateUtilizationChart(trends) {
+  const ctx = document.getElementById('utilizationChart').getContext('2d');
+  
+  // 销毁现有图表
+  if (window.utilizationChart) {
+    window.utilizationChart.destroy();
+  }
+  
+  const datasets = trends.map(gpu => ({
+    label: gpu.gpu_name || `GPU ${gpu.gpu_index}`,
+    data: gpu.data_points.map(point => ({
+      x: new Date(point.ts * 1000),
+      y: point.utilization
+    })),
+    borderColor: getRandomColor(),
+    backgroundColor: getRandomColor(0.1),
+    tension: 0.1
+  }));
+  
+  window.utilizationChart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      scales: {
+        x: {
+          type: 'time',
+          time: {
+            displayFormats: {
+              hour: 'HH:mm',
+              day: 'MM-dd'
+            }
+          }
+        },
+        y: {
+          beginAtZero: true,
+          max: 100,
+          title: {
+            display: true,
+            text: '利用率 (%)'
+          }
+        }
+      },
+      plugins: {
+        title: {
+          display: true,
+          text: 'GPU 利用率趋势'
+        }
+      }
+    }
+  });
+}
+
+// 更新温度图表
+function updateTemperatureChart(trends) {
+  const ctx = document.getElementById('temperatureChart').getContext('2d');
+  
+  if (window.temperatureChart) {
+    window.temperatureChart.destroy();
+  }
+  
+  const datasets = trends.map(gpu => ({
+    label: gpu.gpu_name || `GPU ${gpu.gpu_index}`,
+    data: gpu.data_points.map(point => ({
+      x: new Date(point.ts * 1000),
+      y: point.temperature
+    })),
+    borderColor: getRandomColor(),
+    backgroundColor: getRandomColor(0.1),
+    tension: 0.1
+  }));
+  
+  window.temperatureChart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      scales: {
+        x: {
+          type: 'time',
+          time: {
+            displayFormats: {
+              hour: 'HH:mm',
+              day: 'MM-dd'
+            }
+          }
+        },
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: '温度 (°C)'
+          }
+        }
+      },
+      plugins: {
+        title: {
+          display: true,
+          text: 'GPU 温度趋势'
+        }
+      }
+    }
+  });
+}
+
+// 更新详细统计信息
+ async function updateDetailedStatistics() {
+  try {
+    const response = await apiGet(`/api/gpu/statistics/detailed?period=${currentPeriod}`);
+    const stats = response.statistics || {};
+    
+    document.getElementById('avgUtilizationStat').textContent = 
+      stats.avg_utilization ? stats.avg_utilization.toFixed(1) + '%' : '-';
+    document.getElementById('maxUtilizationStat').textContent = 
+      stats.max_utilization ? stats.max_utilization.toFixed(1) + '%' : '-';
+    document.getElementById('avgTemperatureStat').textContent = 
+      stats.avg_temperature ? stats.avg_temperature.toFixed(1) + '°C' : '-';
+    document.getElementById('maxTemperatureStat').textContent = 
+      stats.max_temperature ? stats.max_temperature.toFixed(1) + '°C' : '-';
+  } catch (error) {
+    console.error('Error updating detailed statistics:', error);
+  }
+}
+
+// 更新进程历史
+async function updateProcessHistory() {
+  try {
+    const response = await apiGet(`/api/gpu/processes/history?period=${currentPeriod}`);
+    const processes = response.processes || [];
+    
+    // 按GPU分组显示进程
+    const gpuProcesses = {};
+    processes.forEach(proc => {
+      if (!gpuProcesses[proc.gpu_index]) {
+        gpuProcesses[proc.gpu_index] = [];
+      }
+      gpuProcesses[proc.gpu_index].push(proc);
+    });
+    
+    // 更新进程表格
+    updateProcessTable(Object.values(gpuProcesses).flat());
+  } catch (error) {
+    console.error('Error updating process history:', error);
+  }
+}
+
+// 在主更新函数中调用这些新函数
+async function updateAllData() {
+  await updateKPIs(await getCurrentGpuData());
+  await updateTrendCharts();
+  await updateDetailedStatistics();
+  await updateProcessHistory();
+}
+
+// 时间范围切换事件
+timeRangeSeg.addEventListener('click', (e) => {
+  if (e.target.tagName === 'BUTTON') {
+    // 更新选中状态
+    timeRangeSeg.querySelectorAll('button').forEach(btn => btn.classList.remove('on'));
+    e.target.classList.add('on');
+    
+    // 更新当前周期
+    currentPeriod = e.target.dataset.period;
+    
+    // 重新加载数据
+    updateAllData();
+  }
+});
+
+
+// 绑定事件
+$('#refreshData').addEventListener('click', loadAllData);
+$('#refreshGpuInfo').addEventListener('click', loadGpuInfo);
+$('#refreshProcesses').addEventListener('click', loadProcessInfo);
+
+$('#timeRangeSeg').addEventListener('click', (e) => {
+  const button = e.target.closest('button');
+  if (!button) return;
+  
+  $('#timeRangeSeg').querySelectorAll('button').forEach(b => b.classList.remove('on'));
+  button.classList.add('on');
+  currentPeriod = button.dataset.period;
+  loadHistoryData();
+});
+
+// 启动实时监控
+mountSSE('/sse/metrics', (data, event) => {
+  if (event === 'metrics') {
+    // 更新实时数据
+    const gpus = data.gpus || [];
+    if (gpus.length > 0) {
+      const avgUtil = gpus.reduce((sum, gpu) => sum + (gpu.utilization || 0), 0) / gpus.length;
+      const avgTemp = gpus.reduce((sum, gpu) => sum + (gpu.temperature || 0), 0) / gpus.length;
+      
+      utilizationChart.push(avgUtil);
+      temperatureChart.push(avgTemp);
+    }
+  }
+});
+
+// 初始加载
+loadAllData();
+
+// 定期刷新
+setInterval(loadGpuInfo, 5000); // 每5秒刷新GPU信息
+setInterval(loadProcessInfo, 10000); // 每10秒刷新进程信息
+</script>
+{% endblock %}
