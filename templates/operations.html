@@ -1,7 +1,32 @@
 {% extends "base.html" %}{% set page_title="运维操作" %}{% block content %}
 <div class="card"><div class="section-title"><span>白名单命令（管理员）</span></div>
-<div class="mt-3"><select id="cmd" class="input" style="max-width:200px"><option value="uptime">uptime</option><option value="df">df -h</option></select> <button class="btn" id="run">执行</button></div><pre class="mt-3" id="out"></pre></div>
+<div class="mt-3">
+  <select id="cmd" class="input" style="max-width:340px">
+    <optgroup label="基础">
+      <option value="uptime">uptime</option>
+      <option value="df -h">df -h</option>
+    </optgroup>
+    <optgroup label="NVIDIA GPU">
+      <option value="nvidia-smi">nvidia-smi</option>
+      <option value="nvidia-smi -L">nvidia-smi -L（列出 GPU）</option>
+      <option value="nvidia-smi topo -m">nvidia-smi topo -m（拓扑）</option>
+      <option value="nvidia-smi --query">nvidia-smi --query（关键信息）</option>
+      <option value="nvidia-smi pmon">nvidia-smi pmon -c 1（进程监控快照）</option>
+      <option value="nvidia-smi dmon">nvidia-smi dmon -c 1（设备监控快照）</option>
+      <option value="nvcc --version">nvcc --version</option>
+    </optgroup>
+    <optgroup label="AMD GPU">
+      <option value="rocm-smi">rocm-smi</option>
+      <option value="rocminfo">rocminfo</option>
+    </optgroup>
+    <optgroup label="硬件概览">
+      <option value="lspci">lspci</option>
+    </optgroup>
+  </select>
+  <button class="btn" id="run">执行</button>
+</div>
+<pre class="mt-3" id="out"></pre></div>
 <script type="module">
-import {apiPost,$} from "{{ url_for('static', path='assets/common.js') }}"; const cmd=$('#cmd'), out=$('#out'); document.getElementById('run').onclick=async()=>{ out.textContent='执行中...'; const r=await apiPost('/api/ops/run?cmd='+encodeURIComponent(cmd.value),{}); out.textContent=r.output||''; };
+import {apiPost,$} from "{{ url_for('static', path='assets/common.js') }}"; const cmd=$('#cmd'), out=$('#out'); document.getElementById('run').onclick=async()=>{ out.textContent='执行中...'; try{ const r=await apiPost('/api/ops/run?cmd='+encodeURIComponent(cmd.value),{}); out.textContent=r?.output||''; }catch(e){ out.textContent=String(e); } };
 </script>
 {% endblock %}
