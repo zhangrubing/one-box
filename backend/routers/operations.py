@@ -56,7 +56,7 @@ ALLOWED_CMDS = {
 async def api_ops_run(cmd: str, user: dict = Depends(require_admin())):
     key = (cmd or "").strip()
     if key not in ALLOWED_CMDS:
-        raise HTTPException(status_code=400, detail="命令不在白名单")
+        raise HTTPException(status_code=400, detail="命令不在白名单内")
     try:
         out = subprocess.check_output(
             ALLOWED_CMDS[key], stderr=subprocess.STDOUT, timeout=8
@@ -96,3 +96,4 @@ async def api_reboot(request: Request, user: dict = Depends(require_admin())):
         return {"ok": True, "message": "重启命令已发送（Linux）"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"执行失败: {e}")
+
