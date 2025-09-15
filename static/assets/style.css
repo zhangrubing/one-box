@@ -142,7 +142,7 @@ html[data-theme="light"] .nav a.m-about    { --weak: rgba(124,58,237,.12); --out
 
 
 /* ===== KPI Cards ===== */
-.kpi{ position:relative; overflow:hidden; border-radius:14px; padding:14px; background: transparent; }
+.kpi{ position:relative; overflow:hidden; border-radius:14px; padding:14px; }
 .kpi::after{ content:""; position:absolute; inset:0; border-radius:14px; pointer-events:none; box-shadow: none; }
 .kpi-label{ color:var(--muted); font-size:13px; }
 .kpi-value{ font-size:32px; font-weight:800; margin-top:6px; letter-spacing:.4px; }
@@ -155,7 +155,8 @@ html[data-theme="light"] .kpi::after{ box-shadow: none; }
 
 
 /* KPI */
-.kpi.card{ border:1px solid transparent; border-radius:14px; padding:14px; background: transparent; }
+/* Ensure KPI cards keep the standard card background and border in dark mode */
+.kpi.card{ border:1px solid var(--border); border-radius:14px; padding:14px; background: var(--card); }
 .kpi::after{ content:""; position:absolute; inset:0; border-radius:14px; pointer-events:none; box-shadow: none; }
 html[data-theme="light"] .kpi{ background: transparent; }
 html[data-theme="light"] .kpi::after{ box-shadow: none; }

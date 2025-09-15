@@ -2,61 +2,67 @@
 <div class="card">
   <div class="flex" style="align-items:center;gap:10px">
     <div class="section-title"><span>网络接口</span></div>
-    
     <label class="small" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="upOnly" checked> 仅显示UP</label>
     <div style="margin-left:auto"><button class="btn" id="refresh">刷新</button></div>
   </div>
   <table class="table mt-3"><thead><tr><th>接口</th><th>UP</th><th>速率</th><th>MTU</th><th>地址</th></tr></thead><tbody id="tb"></tbody></table>
-</div>
+  <div class="small mt-2" style="color:var(--muted)">默认聚合整机（__total__）。后续可加接口选择器。</div>
+  </div>
 
 <div class="flex" style="gap:10px;align-items:center;margin-top:10px">
   <span class="small" style="color:var(--muted)">时间范围</span>
   <div class="seg" id="rangeSeg">
-    <button data-r="1h" class="on">最近1小时</button>
-    <button data-r="24h">最近24小时</button>
+    <button data-r="1h" class="on">近1小时</button>
+    <button data-r="24h">近24小时</button>
   </div>
-</div>
+  <span class="mini-avg" id="rxAvg" style="margin-left:auto"></span>
+  <span class="mini-avg" id="txAvg" style="margin-left:12px"></span>
+  <span class="mini-avg" id="latLabel" style="margin-left:12px"></span>
+  <span class="mini-avg" id="errPerMin" style="margin-left:12px"></span>
+  </div>
 
 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-2">
-  <div class="kpi card"><div class="kpi-label">下载</div><div class="kpi-value" id="rxNow">-</div><div class="kpi-pill"><span id="rxAvg">-</span></div></div>
-  <div class="kpi card"><div class="kpi-label">上传</div><div class="kpi-value" id="txNow">-</div><div class="kpi-pill"><span id="txAvg">-</span></div></div>
-  <div class="kpi card"><div class="kpi-label">延迟</div><div class="kpi-value" id="latNow">-</div><div class="kpi-pill"><span id="latLabel">当前最新值</span></div></div>
-  <div class="kpi card"><div class="kpi-label">错误（范围总计）</div><div class="kpi-value" id="errSum">-</div><div class="kpi-pill"><span id="errPerMin">-</span></div></div>
-</div>
+  <div class="kpi card"><div class="kpi-label">下载</div><div class="kpi-value" id="rxNow">-</div><div class="kpi-pill"><span id="rxAvg2">-</span></div></div>
+  <div class="kpi card"><div class="kpi-label">上传</div><div class="kpi-value" id="txNow">-</div><div class="kpi-pill"><span id="txAvg2">-</span></div></div>
+  <div class="kpi card"><div class="kpi-label">延迟</div><div class="kpi-value" id="latNow">-</div><div class="kpi-pill"><span>当前最新</span></div></div>
+  <div class="kpi card"><div class="kpi-label">错误（范围总计）</div><div class="kpi-value" id="errSum">-</div><div class="kpi-pill"><span id="errPerMin2">-</span></div></div>
+  </div>
 
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
   <div class="card"><div class="section-title"><span id="rxTitle">下载速度</span></div><canvas id="rxChart" style="width:100%;height:220px"></canvas></div>
   <div class="card"><div class="section-title"><span id="txTitle">上传速度</span></div><canvas id="txChart" style="width:100%;height:220px"></canvas></div>
-</div>
+  </div>
 
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
   <div class="card"><div class="section-title"><span id="latTitle">网络延迟（ms）</span></div><canvas id="latChart" style="width:100%;height:220px"></canvas></div>
   <div class="card"><div class="section-title"><span id="errTitle">错误计数（次/分钟）</span></div><canvas id="errChart" style="width:100%;height:220px"></canvas></div>
-</div>
+  </div>
 
 <script type="module">
-import {apiGet,$} from "{{ url_for('static', path='assets/common.js') }}";
+import {apiGet, mountSSE, $} from "{{ url_for('static', path='assets/common.js') }}";
 import {MiniLine} from "{{ url_for('static', path='assets/chart.js') }}";
 
-const rxC=new MiniLine('rxChart',{max:60,yMin:0,yMax:100,axes:true,ticks:[0,25,50,75,100]});
-const txC=new MiniLine('txChart',{max:60,yMin:0,yMax:100,axes:true,ticks:[0,25,50,75,100]});
-const latC=new MiniLine('latChart',{max:60,yMin:0,yMax:200,axes:true,ticks:[0,50,100,150,200]});
-const errC=new MiniLine('errChart',{max:60,yMin:0,yMax:10,axes:true,ticks:[0,5,10]});
+// x轴时间刻度（同仪表盘）
+function genXTicks(t0, t1){ const N=5, out=[]; for(let i=0;i<N;i++){ const p=i/(N-1); const dt=(t1-t0)*(1-p); let label='now'; if(dt>0){ if(dt>=3600) label=`-${Math.round(dt/3600)}h`; else if(dt>=60){ const m=Math.round((dt/60)*10)/10; label=`-${String(m).replace(/\.0$/,'')}m`; } else label=`-${Math.round(dt)}s`; } out.push({p,label}); } return out; }
 
-let range='1h';
+// 图表：启用 timeMode，与窗口同步
+const rxC=new MiniLine('rxChart',{timeMode:true,max:720,yMin:0,yMax:100,axes:true,ticks:[0,25,50,75,100],xTicks:genXTicks});
+const txC=new MiniLine('txChart',{timeMode:true,max:720,yMin:0,yMax:100,axes:true,ticks:[0,25,50,75,100],xTicks:genXTicks});
+const latC=new MiniLine('latChart',{timeMode:true,max:720,yMin:0,yMax:200,axes:true,ticks:[0,50,100,150,200],xTicks:genXTicks});
+const errC=new MiniLine('errChart',{timeMode:true,max:720,yMin:0,yMax:10,axes:true,ticks:[0,5,10],xTicks:genXTicks});
 
+let range='1h'; let sseRef=null; let lastNetTs=0; let lastErrIn=0, lastErrOut=0; let lastUnit='KB/s'; let unitFactor=1; let winStart=0, winEnd=0;
 const fmt = (v)=> (Math.abs(v)>=100? v.toFixed(0) : v.toFixed(1));
-function ticksFor(max){ const m=Math.max(10,Math.ceil(max)); let step=10;
-  if(m<=50)step=10; else if(m<=100)step=20; else if(m<=200)step=50; else if(m<=500)step=100; else if(m<=1000)step=200; else step=500;
-  const t=[]; for(let v=0;v<=m;v+=step) t.push(v); if(t[t.length-1]!==m) t.push(m); return t; }
-function setXLabels60m(){ return ['-60m','-30m','now']; }
-function setXLabels24h(){ return ['-24h','-12h','now']; }
+const nowSec=()=> Math.floor(Date.now()/1000);
+const windowSecs=()=> range==='24h'? 24*3600 : 3600; // 1h
+function setWindowAll(t0,t1){ winStart=t0; winEnd=t1; rxC.setWindow(t0,t1); txC.setWindow(t0,t1); latC.setWindow(t0,t1); errC.setWindow(t0,t1); }
+function niceNumber(x, round){ if(!isFinite(x)||x<=0) return 1; const exp=Math.floor(Math.log10(x)); const f=x/Math.pow(10,exp); let nf; if(round){ nf=(f<1.5)?1:(f<3)?2:(f<7)?5:10; } else { nf=(f<=1)?1:(f<=2)?2:(f<=5)?5:10; } return nf*Math.pow(10,exp); }
+function genNiceYTicks(max, desired=6){ const cap=Math.min(Math.max(max,10),5000); const range=cap; const niceRange=niceNumber(range,false); const spacing=Math.max(1e-12, niceNumber(niceRange/Math.max(2,desired-1),true)); const top=Math.ceil(cap/spacing)*spacing; const out=[]; for(let v=0; v<=top+spacing*0.5; v+=spacing) out.push(Number(v.toFixed(10))); return out; }
 
 async function loadMeta(){
   const meta = await apiGet('/api/network/meta');
   const upOnly = !!(document.getElementById('upOnly')?.checked);
   const entries = Object.entries(meta.ifaces||{}).filter(([k,v])=> upOnly ? !!v.isup : true);
-  // 表格
   const tb = document.getElementById('tb');
   tb.innerHTML = entries.map(([k,v])=>{
     const addrs = (v.addrs||[]).map(a=>a.address).join('<br>');
@@ -66,117 +72,83 @@ async function loadMeta(){
   }).join('') || '<tr><td colspan=5>无数据</td></tr>';
 }
 
-async function loadMetrics(){
-  const iface = '__total__';
-  const minutes = (range==='24h')?1440:60;
-  try { rxC.max=minutes; txC.max=minutes; latC.max=minutes; errC.max=minutes; } catch(e){}
-  const nowSec = Math.floor(Date.now()/1000);
-  const endMinTs = Math.floor(nowSec/60)*60;
-  const startMinTs = endMinTs - (minutes-1)*60;
-
-  // 速率+延迟（按选择的 iface）
-  const sp = await apiGet(`/api/network/speeds?iface=${encodeURIComponent(iface)}&minutes=${minutes}`);
-  const items = sp.items||[];
-  const buckets = new Map(); // mt -> {rx,tx,lat,n,nl}
-  for (const it of items){
-    const ts = Number(it.ts||0); const mt = Math.floor(ts/60)*60;
-    if (mt < startMinTs || mt > endMinTs) continue;
-    const rx = Number(it.rx_kbps||0), tx = Number(it.tx_kbps||0), lt = Number(it.latency_ms||0);
-    const b = buckets.get(mt) || {rx:0, tx:0, lat:0, n:0, nl:0};
-    if (isFinite(rx)) b.rx += rx; if (isFinite(tx)) b.tx += tx; b.n += 1;
-    if (isFinite(lt) && lt>0) { b.lat += lt; b.nl += 1; }
-    buckets.set(mt, b);
-  }
-  // 延迟改用整机汇总（避免选 NIC 时为 0）
-  let totalLatBuckets = null;
-  if (iface !== '__total__'){
-    const spT = await apiGet(`/api/network/speeds?iface=__total__&minutes=${minutes}`);
-    totalLatBuckets = new Map();
-    for (const it of (spT.items||[])){
-      const ts = Number(it.ts||0); const mt = Math.floor(ts/60)*60;
-      if (mt < startMinTs || mt > endMinTs) continue;
-      const lt = Number(it.latency_ms||0);
-      const b = totalLatBuckets.get(mt) || {lat:0,nl:0};
-      if (isFinite(lt)&&lt>0){ b.lat += lt; b.nl += 1; }
-      totalLatBuckets.set(mt,b);
-    }
-  }
-
-  const rxKB=[], txKB=[], latArr=[]; let maxKB=0;
-  for (let t=startMinTs;t<=endMinTs;t+=60){
-    const b = buckets.get(t) || {rx:0,tx:0,lat:0,n:0,nl:0};
-    const rxv=b.rx/Math.max(1,b.n), txv=b.tx/Math.max(1,b.n);
-    let ltv=(b.nl>0)?(b.lat/b.nl):0;
-    if (iface !== '__total__' && totalLatBuckets){
-      const tb = totalLatBuckets.get(t); ltv = tb && tb.nl>0 ? (tb.lat/tb.nl) : 0;
-    }
-    rxKB.push(rxv); txKB.push(txv); latArr.push(ltv);
-    maxKB=Math.max(maxKB,rxv,txv);
-  }
-  const unitLabel = (maxKB>=1024)? 'MB/s' : 'KB/s';
-  const factor = (unitLabel==='MB/s')? (1/1024) : 1;
-
-  rxC.data=[]; txC.data=[]; latC.data=[];
-  let maxRx=10,maxTx=10,maxLat=200;
-  for (let i=0;i<rxKB.length;i++){
-    const rxv=rxKB[i]*factor, txv=txKB[i]*factor, ltv=latArr[i];
-    rxC.push(rxv); txC.push(txv); latC.push(ltv);
-    maxRx=Math.max(maxRx,rxv); maxTx=Math.max(maxTx,txv); if(ltv>0) maxLat=Math.max(maxLat,ltv);
-  }
-  rxC.setRange(0,Math.ceil(maxRx*1.2)); rxC.ticks=ticksFor(Math.ceil(maxRx*1.2)); rxC.setXLabels(range==='24h'?setXLabels24h():setXLabels60m());
-  txC.setRange(0,Math.ceil(maxTx*1.2)); txC.ticks=ticksFor(Math.ceil(maxTx*1.2)); txC.setXLabels(range==='24h'?setXLabels24h():setXLabels60m());
-  latC.setRange(0,Math.ceil(maxLat*1.2)); latC.ticks=ticksFor(Math.ceil(maxLat*1.2)); latC.setXLabels(range==='24h'?setXLabels24h():setXLabels60m());
-
-  // 错误计数（逐分钟补零，按选择的 iface）
-  const er = await apiGet(`/api/network/errors_minutely?iface=${encodeURIComponent(iface)}&minutes=${minutes}`);
-  const emap = new Map((er.items||[]).map(it=>[Math.floor(Number(it.ts||0)/60)*60, Number(it.err_total||0)]));
-  errC.data=[]; let maxE=5; const errArr=[];
-  for (let t=startMinTs;t<=endMinTs;t+=60){ const v=Number(emap.get(t)||0); errC.push(v); errArr.push(v); maxE=Math.max(maxE,v); }
-  errC.setRange(0,Math.ceil(maxE*1.2)); errC.ticks=ticksFor(Math.ceil(maxE*1.2)); errC.setXLabels(range==='24h'?setXLabels24h():setXLabels60m());
-
-  // 标题 + KPI（延迟仅展示当前值）
-  const suffix=(range==='24h')?'（近24小时）':'（近60分钟）';
-  $('#rxTitle').textContent=`下载速度（${unitLabel}）`+suffix;
-  $('#txTitle').textContent=`上传速度（${unitLabel}）`+suffix;
-  $('#latTitle').textContent='网络延迟（ms）'+suffix;
-  $('#errTitle').textContent='错误计数（次/分钟）'+suffix;
-
-  const rxNow = rxKB.length? rxKB[rxKB.length-1]*factor : 0;
-  const txNow = txKB.length? txKB[txKB.length-1]*factor : 0;
-  const rxAvg = (rxKB.reduce((a,b)=>a+b,0)/Math.max(1,rxKB.length))*factor;
-  const txAvg = (txKB.reduce((a,b)=>a+b,0)/Math.max(1,txKB.length))*factor;
-  const latNow = latArr.length? latArr[latArr.length-1] : 0;
-  const errSum = errArr.reduce((a,b)=>a+b,0);
-  const errPerMin = errSum/Math.max(1,errArr.length);
-
-  $('#rxNow').textContent=`${fmt(rxNow)} ${unitLabel}`;
-  $('#txNow').textContent=`${fmt(txNow)} ${unitLabel}`;
-  $('#rxAvg').textContent=`平均 ${fmt(rxAvg)} ${unitLabel}`;
-  $('#txAvg').textContent=`平均 ${fmt(txAvg)} ${unitLabel}`;
-  $('#latNow').textContent=isFinite(latNow)? `${fmt(latNow)} ms` : '-';
-  $('#errSum').textContent=`${errSum}`;
-  $('#errPerMin').textContent=`每分钟平均 ${fmt(errPerMin)}`;
+function applyYScales(rxMax, txMax, latMax, errMax){
+  const rxTicks=genNiceYTicks(rxMax,6); rxC.setRange(0, rxTicks[rxTicks.length-1]); rxC.ticks=rxTicks; rxC.setXLabels(genXTicks(winStart,winEnd));
+  const txTicks=genNiceYTicks(txMax,6); txC.setRange(0, txTicks[txTicks.length-1]); txC.ticks=txTicks; txC.setXLabels(genXTicks(winStart,winEnd));
+  const ltTicks=genNiceYTicks(latMax,6); latC.setRange(0, ltTicks[ltTicks.length-1]); latC.ticks=ltTicks; latC.setXLabels(genXTicks(winStart,winEnd));
+  const erTicks=genNiceYTicks(errMax,6); errC.setRange(0, erTicks[erTicks.length-1]); errC.ticks=erTicks; errC.setXLabels(genXTicks(winStart,winEnd));
 }
 
-// 事件绑定
-document.getElementById('rangeSeg')?.addEventListener('click',(e)=>{
-  const b=e.target.closest('button'); if(!b) return;
-  const seg=document.getElementById('rangeSeg');
-  seg.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on');
-  range=b.dataset.r; loadMetrics();
+async function loadHistory(){
+  const iface='__total__';
+  const end=nowSec();
+  const start=end - windowSecs();
+  setWindowAll(start, end);
+  const fields='ts,rx_kbps,tx_kbps,latency_ms,errin,errout';
+  const r = await apiGet(`/api/metrics/network?iface=${encodeURIComponent(iface)}&start=${start}&end=${end}&fields=${fields}`);
+  let items=(r&&r.items)?r.items:[];
+  // Downsample 24h to ~720 points to avoid lag
+  if (range==='24h' && items.length>720){ const step=Math.ceil(items.length/720); const tmp=[]; for(let i=0;i<items.length;i+=step) tmp.push(items[i]); if(tmp[tmp.length-1]!==items[items.length-1]) tmp.push(items[items.length-1]); items=tmp; }
+  // Decide unit before pushing
+  let histMaxKBps=0; for(const it of items){ const rx=Number(it.rx_kbps||0), tx=Number(it.tx_kbps||0); histMaxKBps=Math.max(histMaxKBps, rx, tx); }
+  if(histMaxKBps>=1024){ lastUnit='MB/s'; unitFactor=1/1024; } else { lastUnit='KB/s'; unitFactor=1; }
+  // Clear and push with chosen unit
+  rxC.data=[]; txC.data=[]; latC.data=[]; errC.data=[];
+  let maxRx=10, maxTx=10, maxLat=200, maxErr=5; let errSum=0;
+  let prevErrIn=null, prevErrOut=null, prevTs=null; lastErrIn=0; lastErrOut=0; lastNetTs=0;
+  for (const it of items){
+    const ts=Number(it.ts||0); const rx=Number(it.rx_kbps||0)*unitFactor; const tx=Number(it.tx_kbps||0)*unitFactor; const lt=Number(it.latency_ms||0); const ein=Number(it.errin||0); const eout=Number(it.errout||0);
+    rxC.push(isFinite(rx)?rx:0, ts); txC.push(isFinite(tx)?tx:0, ts); latC.push(isFinite(lt)?lt:0, ts);
+    if(prevErrIn!=null && prevErrOut!=null && prevTs!=null && ts>prevTs){ const d=(Math.max(0,ein-prevErrIn)+Math.max(0,eout-prevErrOut)); const perMin = d * (60/Math.max(1, ts-prevTs)); errC.push(perMin, ts); maxErr=Math.max(maxErr, perMin); errSum += d; }
+    prevErrIn=ein; prevErrOut=eout; prevTs=ts;
+    maxRx=Math.max(maxRx, rx); maxTx=Math.max(maxTx, tx); if(lt>0) maxLat=Math.max(maxLat, lt);
+  }
+  applyYScales(maxRx, maxTx, maxLat, maxErr);
+  // Titles + KPIs
+  const last = items.length? items[items.length-1] : null;
+  const lastRX = last? Number(last.rx_kbps||0)*unitFactor : 0;
+  const lastTX = last? Number(last.tx_kbps||0)*unitFactor : 0;
+  const lastLT = last? Number(last.latency_ms||0) : 0;
+  $('#rxTitle').textContent=`下载速度（${lastUnit}）` + (range==='24h'?'（近24小时）':'（近1小时）');
+  $('#txTitle').textContent=`上传速度（${lastUnit}）` + (range==='24h'?'（近24小时）':'（近1小时）');
+  $('#latTitle').textContent='网络延迟（ms）' + (range==='24h'?'（近24小时）':'（近1小时）');
+  $('#errTitle').textContent='错误计数（次/分钟）' + (range==='24h'?'（近24小时）':'（近1小时）');
+  $('#rxNow').textContent=`${fmt(lastRX)} ${lastUnit}`; $('#txNow').textContent=`${fmt(lastTX)} ${lastUnit}`; $('#latNow').textContent=isFinite(lastLT)? `${fmt(lastLT)} ms`:'-';
+  let srx=0, stx=0; let n=0; for(const it of items){ srx+=Number(it.rx_kbps||0); stx+=Number(it.tx_kbps||0); n++; }
+  const rxAvg=(n? srx/n:0)*unitFactor, txAvg=(n? stx/n:0)*unitFactor;
+  $('#rxAvg').textContent=`平均 ${fmt(rxAvg)} ${lastUnit}`; $('#txAvg').textContent=`平均 ${fmt(txAvg)} ${lastUnit}`;
+  $('#rxAvg2').textContent=`平均 ${fmt(rxAvg)} ${lastUnit}`; $('#txAvg2').textContent=`平均 ${fmt(txAvg)} ${lastUnit}`;
+  $('#errSum').textContent=`${errSum}`;
+}
+
+function startRealtime(){
+  if(sseRef && typeof sseRef.close==='function'){ try{ sseRef.close(); }catch(_){} }
+  const iface='__total__';
+  sseRef = mountSSE(`/sse/network?iface=${encodeURIComponent(iface)}`, (d)=>{
+    const ts = Number(d.ts||d.time||nowSec());
+    const rx = Number(d.rx_kbps||0), tx = Number(d.tx_kbps||0), lt = Number(d.latency_ms||0);
+    const ein = Number(d.errin||0), eout = Number(d.errout||0);
+    const w = windowSecs(); setWindowAll(ts - w, ts);
+    rxC.push(rx*unitFactor, ts); txC.push(tx*unitFactor, ts); if(isFinite(lt) && lt>0) latC.push(lt, ts);
+    if(lastNetTs && ts>lastNetTs){ const dErr=Math.max(0,ein-lastErrIn)+Math.max(0,eout-lastErrOut); const perMin = dErr * (60/Math.max(1, ts-lastNetTs)); errC.push(perMin, ts); const sumNow=Number(document.getElementById('errSum').textContent||'0')||0; document.getElementById('errSum').textContent=String(sumNow + dErr); }
+    lastNetTs=ts; lastErrIn=ein; lastErrOut=eout;
+    $('#rxNow').textContent = `${fmt(rx*unitFactor)} ${lastUnit}`;
+    $('#txNow').textContent = `${fmt(tx*unitFactor)} ${lastUnit}`;
+    if(isFinite(lt)) $('#latNow').textContent = `${fmt(lt)} ms`;
+  });
+}
+
+document.getElementById('rangeSeg')?.addEventListener('click', async (e)=>{
+  const b=e.target.closest('button'); if(!b) return; const seg=document.getElementById('rangeSeg'); seg.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  range=b.dataset.r; await loadHistory(); startRealtime();
 });
 
 document.getElementById('upOnly')?.addEventListener('change', ()=>{ loadMeta(); });
 document.getElementById('refresh')?.addEventListener('click', ()=>{ loadMeta(); });
 
-// 避免标题遮挡画布
-;['rxChart','txChart','latChart','errChart'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.marginTop='8px'; });
-
-// 初始化与定时刷新
 await loadMeta();
-await loadMetrics();
-setInterval(loadMetrics, 5000);
+await loadHistory();
+startRealtime();
 setInterval(loadMeta, 10000);
 </script>
 {% endblock %}

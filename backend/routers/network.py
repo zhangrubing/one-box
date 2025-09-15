@@ -1,7 +1,7 @@
-import time, math, sqlite3
+import time, math, sqlite3, asyncio
 from typing import Optional, Dict
 from fastapi import APIRouter, Depends, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 import aiosqlite, psutil
 from ..deps import require_user
 from ..config import DB_PATH
@@ -119,3 +119,48 @@ async def api_network_errors_minutely(iface: str = "__total__", minutes: int = 6
         bi = buckets.get(m, {"errin":0, "errout":0})
         out_items.append({"ts": m, "errin": bi["errin"], "errout": bi["errout"], "err_total": bi["errin"]+bi["errout"]})
     return {"items": out_items}
+
+
+# SSE: stream latest per-interface network sample for realtime charts
+async def _sse_event(data: dict) -> bytes:
+    buf = ""
+    import json as _json
+    payload = _json.dumps(data, ensure_ascii=False)
+    for line in payload.splitlines():
+        buf += f"data: {line}\n"
+    buf += "\n"
+    return buf.encode("utf-8")
+
+
+@router.get("/sse/network")
+async def sse_network(request: Request, iface: str = "__total__", user: dict = Depends(require_user)):
+    async def event_gen():
+        last_ts = 0
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                async with aiosqlite.connect(DB_PATH) as db:
+                    async with db.execute(
+                        "SELECT ts, rx_kbps, tx_kbps, latency_ms, errin, errout FROM net_data WHERE iface=? ORDER BY ts DESC LIMIT 1",
+                        (iface,),
+                    ) as cur:
+                        row = await cur.fetchone()
+                    if row:
+                        ts = int(row[0])
+                        if ts != last_ts:
+                            last_ts = ts
+                            data = {
+                                "ts": ts,
+                                "iface": iface,
+                                "rx_kbps": row[1],
+                                "tx_kbps": row[2],
+                                "latency_ms": row[3],
+                                "errin": row[4],
+                                "errout": row[5],
+                            }
+                            yield await _sse_event(data)
+            except Exception:
+                pass
+            await asyncio.sleep(1.0)
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
