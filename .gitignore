@@ -3,3 +3,4 @@ app.db-shm
 app.db-wal
 __pycache__/
 *.pyc
+.venv
