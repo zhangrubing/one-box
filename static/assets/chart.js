@@ -1,4 +1,9 @@
 
+// Global registry for redraw on theme changes
+if (!globalThis.__MiniLineRegistry) globalThis.__MiniLineRegistry = new Set();
+if (typeof globalThis.__MiniLineThemeObserverInstalled === 'undefined') globalThis.__MiniLineThemeObserverInstalled = false;
+const __MiniLineRegistry = globalThis.__MiniLineRegistry;
+
 export class MiniLine{
   constructor(el, opt={}){
     // el can be a canvas element or a string id
@@ -17,6 +22,19 @@ export class MiniLine{
     if (!this.noop){
       const dpr = window.devicePixelRatio||1; this.el.width=this.el.clientWidth*dpr; this.el.height=this.el.clientHeight*dpr; this.c.scale(dpr,dpr);
       window.addEventListener('resize', ()=>{ const dpr=window.devicePixelRatio||1; this.el.width=this.el.clientWidth*dpr; this.el.height=this.el.clientHeight*dpr; this.c.setTransform(1,0,0,1,0,0); this.c.scale(dpr,dpr); this.draw(); });
+      // register for global redraw
+      try{ __MiniLineRegistry.add(this); }catch(e){}
+      if (!globalThis.__MiniLineThemeObserverInstalled){
+        try{
+          const mo = new MutationObserver((muts)=>{
+            for (const m of muts){ if (m.attributeName === 'data-theme'){ requestAnimationFrame(()=>{
+              __MiniLineRegistry.forEach(inst=>{ try{ inst.draw(); }catch(e){} });
+            }); break; } }
+          });
+          mo.observe(document.documentElement, { attributes: true });
+          globalThis.__MiniLineThemeObserverInstalled = true;
+        }catch(e){}
+      }
     } else {
       // soft warn, but don't crash
       console.warn('[MiniLine] canvas not found, drawing disabled.');
@@ -105,3 +123,5 @@ export class MiniLine{
     c.stroke();
   }
 }
+
+MiniLine.prototype.destroy = function(){ try{ __MiniLineRegistry.delete(this); }catch(e){} };
