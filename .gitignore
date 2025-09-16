@@ -5,4 +5,5 @@ __pycache__/
 *.pyc
 .venv
 data
-build
+build/
+obm-installer-1.0.4-uvicorn-opt-root.tar.gz
