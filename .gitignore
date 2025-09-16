@@ -4,3 +4,6 @@ app.db-wal
 __pycache__/
 *.pyc
 .venv
+data
+build/
+obm-installer-1.0.4-uvicorn-opt-root.tar.gz

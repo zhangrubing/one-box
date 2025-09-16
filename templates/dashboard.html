@@ -16,9 +16,9 @@
     <div class="kpi-pill"><span id="gpuInfo">-</span></div>
   </div>
   <div class="kpi card alerts">
-    <div class="kpi-label">告警（24h）</div>
+    <div class="kpi-label"><a href="/alerts">告警（24h）</a></div>
     <div class="kpi-value" id="alertVal">-</div>
-    <div class="kpi-pill"><span id="alertInfo">-</span></div>
+    <a href="/alerts"><div class="kpi-pill"><span id="alertInfo">-</span></div></a>
   </div>
 </div>
 
@@ -47,7 +47,7 @@
 
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
   <div class="card">
-    <div class="section-title"><span>最近严重告警</span></div>
+    <div class="section-title"><span><a href="/alerts">最近告警</a></span></div> <!-- ← 改了标题 -->
     <table class="table"><thead><tr><th>ID</th><th>级别</th><th>标题</th><th>时间</th><th>状态</th></tr></thead><tbody id="sevAlerts"></tbody></table>
   </div>
   <div class="card">
@@ -64,10 +64,18 @@ import { MiniLine } from "{{ url_for('static', path='assets/chart.js') }}";
 const cpuVal=$("#cpuVal"), memVal=$("#memVal"), cpuInfo=$("#cpuInfo"), memTotal=$("#memTotal"), gpuVal=$("#gpuVal"), gpuInfo=$("#gpuInfo"), alertVal=$("#alertVal"), alertInfo=$("#alertInfo");
 const sevAlerts=$("#sevAlerts"), procTop=$("#procTop");
 
+// ===== 日志与调试 =====
+window.DEBUG_GPU_LOG = false;
+window.__METRICS_LOGS = window.__METRICS_LOGS || [];
+const __LOG_KEEP = 300;
+function dlog(...a){ if(window.DEBUG_GPU_LOG) console.debug('[DASH]',...a); }
+function ilog(...a){ if(window.DEBUG_GPU_LOG) console.info('[DASH]',...a); }
+function wlog(...a){ if(window.DEBUG_GPU_LOG) console.warn('[DASH]',...a); }
+
 // x 轴时间刻度（5 个等分）
 function genXTicks(t0, t1){ const N=5, out=[]; for(let i=0;i<N;i++){ const p=i/(N-1); const dt=(t1-t0)*(1-p); let label='now'; if(dt>0){ if(dt>=3600) label=`-${Math.round(dt/3600)}h`; else if(dt>=60){ const m=Math.round((dt/60)*10)/10; label=`-${String(m).replace(/\.0$/,'')}m`; } else label=`-${Math.round(dt)}s`; } out.push({p,label}); } return out; }
 
-// 图表（启用 timeMode）
+// 图表
 const cpuC=new MiniLine('cpuChart',{timeMode:true,max:720,yMin:0,yMax:100,axes:true,ticks:[0,20,40,60,80,100],xTicks:genXTicks});
 const memC=new MiniLine('memChart',{timeMode:true,max:720,yMin:0,yMax:100,axes:true,ticks:[0,20,40,60,80,100],xTicks:genXTicks});
 const diskC=new MiniLine('diskChart',{timeMode:true,max:720,yMin:0,yMax:50,axes:true,ticks:[0,10,20,30,40,50],xTicks:genXTicks});
@@ -76,40 +84,97 @@ const gpuTempC=new MiniLine('gpuTempChart',{timeMode:true,max:720,yMin:0,yMax:10
 
 let range='5m';
 let lastAvgCpu=0, lastAvgMem=0, lastAvgDisk=0; let sseRef=null;
-let loadId=0; // 防止并发加载导致旧数据覆盖新结果
-const DEBUG_POPUPS = false; // 屏蔽调试弹窗（改为 true 才会弹出）
-let winStart=0, winEnd=0; // 使用服务端时间窗口，避免客户端时钟偏差
+let winStart=0, winEnd=0;
+let lastSseAt = 0; // SSE 健康检查
 
 function nowSec(){ return Math.floor(Date.now()/1000); }
 function windowSecs(){ return range==='24h'? 24*3600 : (range==='1h'? 3600 : 300); }
-function rangeSince(){ return nowSec() - windowSecs(); }
 function setWindowAll(t0, t1){ winStart=t0; winEnd=t1; cpuC.setWindow(t0,t1); memC.setWindow(t0,t1); diskC.setWindow(t0,t1); gpuUtilC.setWindow(t0,t1); gpuTempC.setWindow(t0,t1); }
 function fmtTs(ts){ if(!ts && ts!==0) return '-'; const d=new Date(Number(ts)*1000); const pad=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+function numOrNull(v){ if(v===null||v===undefined) return null; const n=Number(v); return Number.isFinite(n)?n:null; }
 
-async function refreshGPU(){
+// ========== GPU 基本信息只拉一次：成功后停止 ==========
+let _gpuFetchedOnce = false;
+async function refreshGPUOnce(){
+  if (_gpuFetchedOnce) return;
   try{
     const g = await apiGet('/api/system/gpu');
-    const gs = g.gpus||[]; gpuInfo.textContent = (gs.length||0) + ' × GPU';
-    if(gs.length){
-      const util = gs.map(x=>Number(x.util||0)).filter(x=>!isNaN(x));
-      const temp = gs.map(x=>Number(x.temp||0)).filter(x=>!isNaN(x));
-      const avgUtil = util.length ? util.reduce((a,b)=>a+b,0)/util.length : 0;
-      const avgTemp = temp.length ? temp.reduce((a,b)=>a+b,0)/temp.length : 0;
-      gpuVal.textContent = Number(avgUtil).toFixed(0)+'%';
-      gpuUtilC.push(avgUtil, nowSec()); gpuTempC.push(avgTemp, nowSec());
-    } else { gpuVal.textContent='-'; }
-  }catch(e){ gpuVal.textContent='-'; gpuInfo.textContent='-'; }
+    const gs = g.gpus||[];
+    gpuInfo.textContent = (gs.length||0) + ' × GPU';
+
+    const util = gs.map(x=>numOrNull(x.util)).filter(x=>x!==null);
+    const temp = gs.map(x=>numOrNull(x.temp)).filter(x=>x!==null);
+    const avgUtil = util.length ? util.reduce((a,b)=>a+b,0)/util.length : null;
+    const avgTemp = temp.length ? temp.reduce((a,b)=>a+b,0)/temp.length : null;
+    dlog('refreshGPUOnce -> gpus:', gs.length, 'avgUtil:', avgUtil, 'avgTemp:', avgTemp);
+
+    _gpuFetchedOnce = true; // 成功一次即可停
+  }catch(e){
+    wlog('refreshGPUOnce error', e);
+  }
+}
+
+// ========= 告警：显示 24h 内“所有”告警（不做严重级别过滤） =========
+function parseAlertTs(v){
+  if (v==null) return NaN;
+  if (typeof v==='number') return v>1e12? Math.round(v/1000) : Math.round(v);
+  if (typeof v==='string'){
+    const n = Number(v);
+    if (Number.isFinite(n)) return n>1e12? Math.round(n/1000) : Math.round(n);
+    let s = v.trim(); if (!s.includes('T')) s = s.replace(' ', 'T');
+    let t = Date.parse(s); if (Number.isNaN(t)) t = Date.parse(s+'Z');
+    return Number.isNaN(t) ? NaN : Math.round(t/1000);
+  }
+  return NaN;
 }
 
 async function refreshAlerts(){
   try{
     const r = await apiGet('/api/alerts');
-    const items = (r.items||[]).filter(x=>['CRITICAL','ERROR','SEVERE','FATAL'].includes(String(x.level||'').toUpperCase()));
-    const now = Date.now();
-    const within = items.filter(x=>{ const t=new Date((x.created_at||'').replace(' ','T')).getTime(); return !isNaN(t)&&(now-t)<=24*3600*1000; }).slice(0,10);
-    sevAlerts.innerHTML = within.map(x=>`<tr><td>${x.id}</td><td>${x.level}</td><td>${x.title}</td><td>${x.created_at}</td><td>${x.acknowledged?'已确认':'待处理'}</td></tr>`).join('') || '<tr><td colspan=5>暂无严重告警</td></tr>';
-    const processing = within.filter(x=>!x.acknowledged).length; alertVal.textContent = within.length; alertInfo.textContent = processing?('处理中 '+processing):'无未确认';
-  }catch(e){ sevAlerts.innerHTML = '<tr><td colspan=5>加载失败</td></tr>'; }
+    const rows = (r.items || r.alerts || r.data || []);
+
+    // 统一字段
+    const norm = rows.map(x=>{
+      const level = String(x.level ?? x.severity ?? x.type ?? '').toUpperCase();
+      const title = (x.title ?? x.message ?? x.summary ?? x.name ?? '').toString() || '(无标题)';
+      const ts    = parseAlertTs(x.created_at ?? x.timestamp ?? x.ts ?? x.time ?? x.start_time ?? x.happened_at);
+      const ackRaw = (x.acknowledged ?? x.ack ?? x.is_ack ?? x.status);
+      const ack = (typeof ackRaw === 'boolean') ? ackRaw
+                : (typeof ackRaw === 'number')  ? (ackRaw !== 0)
+                : (typeof ackRaw === 'string')  ? /ack/i.test(ackRaw)
+                : false;
+      return { id: x.id ?? x.alert_id ?? x.uid ?? '-', level, title, ts, ack };
+    });
+
+    // 仅保留 24h 内
+    const nowSecTs = Math.floor(Date.now()/1000);
+    const within24h = norm.filter(it => Number.isFinite(it.ts) && (nowSecTs - it.ts) <= 24*3600);
+
+    // KPI：显示所有（24h 内）条数与未确认数
+    const openCnt = within24h.filter(x=>!x.ack).length;
+    alertVal.textContent  = within24h.length;
+    alertInfo.textContent = openCnt ? ('处理中 '+openCnt) : '无未确认';
+
+    // 表格：显示全部（按时间倒序，最多 10 条）
+    within24h.sort((a,b)=> b.ts - a.ts);
+    const top = within24h.slice(0,10);
+    const fmt = (ts)=>{ const d=new Date(ts*1000); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+
+    sevAlerts.innerHTML = top.map(x=>`
+      <tr>
+        <td>${x.id}</td>
+        <td>${x.level || '-'}</td>
+        <td title="${x.title.replace(/"/g,'&quot;')}">${x.title}</td>
+        <td>${fmt(x.ts)}</td>
+        <td>${x.ack ? '已确认' : '待处理'}</td>
+      </tr>
+    `).join('') || '<tr><td colspan=5>暂无告警</td></tr>';
+
+    ilog('[alerts] total=', rows.length, 'within24h=', within24h.length, 'open=', openCnt);
+  }catch(e){
+    sevAlerts.innerHTML = '<tr><td colspan=5>加载失败</td></tr>';
+    wlog('refreshAlerts error', e);
+  }
 }
 
 async function sampleProcessTop(){
@@ -117,60 +182,53 @@ async function sampleProcessTop(){
   try{
     const r = await apiGet('/api/process/top?duration=30&limit=10');
     procTop.innerHTML = (r.items||[]).map(p=>`<tr><td>${p.pid}</td><td>${p.name}</td><td>${p.user||''}</td><td>${(p.cpu||0).toFixed(1)}</td><td>${formatBytes(p.mem_rss||0)}</td></tr>`).join('') || '<tr><td colspan=5>无数据</td></tr>';
-  }catch(e){ procTop.innerHTML = '<tr><td colspan=5>采样失败</td></tr>'; }
+  }catch(e){ procTop.innerHTML = '<tr><td colspan=5>采样失败</td></tr>'; wlog('sampleProcessTop error', e); }
 }
 document.getElementById('sampleTop').onclick = sampleProcessTop;
 
 async function loadHistory(){
-  const myId = ++loadId;
-  const since = rangeSince(), until = nowSec();
+  const since = nowSec() - (range==='24h'? 24*3600 : (range==='1h'? 3600 : 300));
+  const until = nowSec();
   const fields = 'cpu_percent,mem_percent,disk_mb_s,gpu_util_avg,gpu_temp_avg';
   const r = await apiGet(`/api/metrics/system?start=${since}&end=${until}&fields=${fields}`);
   const raw = (r && r.items) ? r.items : [];
+  ilog('loadHistory range=', fmtTs(since), '~', fmtTs(until), 'rows=', raw.length);
 
-  // 固定窗口到请求窗口，确保横轴严格覆盖整段时间
   setWindowAll(since, until);
 
-  // 调试弹窗：最近 1 小时（仅在 DEBUG_POPUPS 为 true 时弹出）
-  if (DEBUG_POPUPS && range === '1h'){
-    const tsList = raw.map(it=>Number(it.ts||0)).filter(x=>x>=since && x<=until).sort((a,b)=>a-b);
-    const minTs = tsList.length? tsList[0] : null; const maxTs = tsList.length? tsList[tsList.length-1] : null;
-    let intervalSec = 5; if (tsList.length>=2){ const deltas=[]; for(let i=1;i<tsList.length;i++){ const d=tsList[i]-tsList[i-1]; if(d>0&&isFinite(d)) deltas.push(d);} deltas.sort((a,b)=>a-b); if(deltas.length){ const mid=Math.floor(deltas.length/2); intervalSec = deltas.length%2? deltas[mid] : Math.round((deltas[mid-1]+deltas[mid])/2); intervalSec=Math.max(1,Math.round(intervalSec)); } }
-    const expected = Math.floor((until-since)/intervalSec)+1; let missing=0; for(let i=1;i<tsList.length;i++){ const d=tsList[i]-tsList[i-1]; if(d>intervalSec){ missing += Math.max(0, Math.round(d/intervalSec)-1); } }
-    const approxMissing = Math.max(0, expected - tsList.length);
-    alert([`[调试] 请求窗口(1h): ${fmtTs(since)} ~ ${fmtTs(until)}`, `返回条数: ${tsList.length}`, `返回范围: ${fmtTs(minTs)} ~ ${fmtTs(maxTs)}`, `估算采样间隔: ${intervalSec}s`, `理论条数(估算): ${expected}`, `估算缺失槽位: ${missing}（或理论-实际≈${approxMissing}）`, `是否存在缺失: ${(missing>0||approxMissing>0)?'是':'否'}`].join('\n'));
-  }
-  // 调试弹窗：最近 24 小时（仅在 DEBUG_POPUPS 为 true 时弹出）
-  if (DEBUG_POPUPS && range === '24h'){
-    const tsList = raw.map(it=>Number(it.ts||0)).filter(x=>x>=since && x<=until).sort((a,b)=>a-b);
-    const minTs = tsList.length? tsList[0] : null; const maxTs = tsList.length? tsList[tsList.length-1] : null;
-    let intervalSec = 5; if (tsList.length>=2){ const deltas=[]; for(let i=1;i<tsList.length;i++){ const d=tsList[i]-tsList[i-1]; if(d>0&&isFinite(d)) deltas.push(d);} deltas.sort((a,b)=>a-b); if(deltas.length){ const mid=Math.floor(deltas.length/2); intervalSec = deltas.length%2? deltas[mid] : Math.round((deltas[mid-1]+deltas[mid])/2); intervalSec=Math.max(1,Math.round(intervalSec)); } }
-    const expected = Math.floor((until-since)/intervalSec)+1; let missing=0; for(let i=1;i<tsList.length;i++){ const d=tsList[i]-tsList[i-1]; if(d>intervalSec){ missing += Math.max(0, Math.round(d/intervalSec)-1); } }
-    const approxMissing = Math.max(0, expected - tsList.length);
-    alert([`[调试] 请求窗口(24h): ${fmtTs(since)} ~ ${fmtTs(until)}`, `返回条数: ${tsList.length}`, `返回范围: ${fmtTs(minTs)} ~ ${fmtTs(maxTs)}`, `估算采样间隔: ${intervalSec}s`, `理论条数(估算): ${expected}`, `估算缺失槽位: ${missing}（或理论-实际≈${approxMissing}）`, `是否存在缺失: ${(missing>0||approxMissing>0)?'是':'否'}`].join('\n'));
-  }
-
-  if (myId !== loadId) return; // 异步并发保护
-
   const filtered = raw.filter(it=> Number(it.ts||0) >= since && Number(it.ts||0) <= until).sort((a,b)=>a.ts-b.ts);
-  // 24h 视图做等步抽样，避免点太多影响前端
   let points = filtered;
   if (range==='24h'){
     const step = Math.ceil((filtered.length||1)/720); if (step>1){ const tmp=[]; for(let i=0;i<filtered.length;i+=step) tmp.push(filtered[i]); points = tmp; }
   }
-  // 填充图表
   cpuC.data=[]; memC.data=[]; diskC.data=[]; gpuUtilC.data=[]; gpuTempC.data=[];
   let maxDisk=0, sumCpu=0, sumMem=0, sumDisk=0, cnt=0;
-  for (const it of points){ const ts=Number(it.ts||0); const cpu=Number(it.cpu_percent||0); const mem=Number(it.mem_percent||0); const dsk=Number(it.disk_mb_s||0); const gu=Number(it.gpu_util_avg||0); const gt=Number(it.gpu_temp_avg||0);
-    cpuC.push(isFinite(cpu)?cpu:0, ts); memC.push(isFinite(mem)?mem:0, ts); diskC.push(isFinite(dsk)?dsk:0, ts); gpuUtilC.push(isFinite(gu)?gu:0, ts); gpuTempC.push(isFinite(gt)?gt:0, ts);
-    if (isFinite(dsk)) maxDisk = Math.max(maxDisk, dsk);
+  let invalidGu=0, invalidGt=0;
+
+  for (const it of points){
+    const ts=Number(it.ts||0);
+    const cpu=Number(it.cpu_percent||0);
+    const mem=Number(it.mem_percent||0);
+    const dsk=Number(it.disk_mb_s||0);
+    const gu = numOrNull(it.gpu_util_avg ?? it.gpu_util ?? it.gpu?.util);
+    const gt = numOrNull(it.gpu_temp_avg ?? it.gpu_temp ?? it.gpu?.temp);
+
+    cpuC.push(Number.isFinite(cpu)?cpu:0, ts);
+    memC.push(Number.isFinite(mem)?mem:0, ts);
+    diskC.push(Number.isFinite(dsk)?dsk:0, ts);
+
+    if (gu!==null) gpuUtilC.push(gu, ts); else invalidGu++;
+    if (gt!==null) gpuTempC.push(gt, ts); else invalidGt++;
+
+    if (Number.isFinite(dsk)) maxDisk = Math.max(maxDisk, dsk);
   }
+  ilog('loadHistory points=', points.length, 'gpuUtil invalid=', invalidGu, 'gpuTemp invalid=', invalidGt);
+
   for (const it of filtered){ sumCpu+=Number(it.cpu_percent||0); sumMem+=Number(it.mem_percent||0); sumDisk+=Number(it.disk_mb_s||0); cnt++; }
-  // 调整磁盘轴
+
   const targetMax = maxDisk>0 ? Math.min(maxDisk*1.3, 5000) : 50;
-  // Generate nice ticks so small ranges (5m/1h) still have multiple grid lines
   function niceNumber(x, round){
-    if(!isFinite(x) || x<=0) return 1;
+    if(!Number.isFinite(x) || x<=0) return 1;
     const exp = Math.floor(Math.log10(x));
     const f = x / Math.pow(10, exp);
     let nf;
@@ -189,36 +247,72 @@ async function loadHistory(){
     const out=[]; for(let v=graphMin; v<=graphMax + spacing*0.5; v+=spacing){ out.push(Number(v.toFixed(10))); }
     return out;
   }
-  // Important: set yMax to the top tick so that all ticks are within range
   const yTicks = genNiceYTicks(targetMax, 6);
   const yTop = yTicks.length ? yTicks[yTicks.length-1] : targetMax;
   diskC.setRange(0, yTop);
   diskC.ticks = yTicks;
-  // Ensure updated tick marks appear immediately
   try{ diskC.draw(); }catch(_){ }
 
-  // 历史加载完成后，窗口仍保持 [since,until]，由 SSE 再平滑滚动（基于服务端 ts）
   lastAvgCpu = cnt? (sumCpu/cnt) : 0; lastAvgMem = cnt? (sumMem/cnt) : 0; lastAvgDisk = cnt? (sumDisk/cnt) : 0;
   document.getElementById('avgCpu').textContent = `${(lastAvgCpu||0).toFixed(1)}% 平均`;
   document.getElementById('avgMem').textContent = `${(lastAvgMem||0).toFixed(1)}% 平均`;
   document.getElementById('avgDisk').textContent = `${(lastAvgDisk||0).toFixed(1)} MB/s 平均`;
 }
 
-function startRealtime(){ sseRef = mountSSE('/sse/metrics', (d,e)=>{ if(e.type==='metrics') handleMetricsSnap(d); }); }
+function startRealtime(){
+  sseRef = mountSSE('/sse/metrics', (d,e)=>{
+    if(e.type==='open') ilog('SSE open');
+    if(e.type==='error') wlog('SSE error', e);
+    if(e.type==='metrics') handleMetricsSnap(d);
+  });
+}
 
 function handleMetricsSnap(s){
-  const cpuv = Number(s.cpu_percent||0); cpuVal.textContent = isFinite(cpuv)? cpuv.toFixed(0)+'%' : '-';
-  let memv = (s.mem_percent!=null && isFinite(Number(s.mem_percent))) ? Number(s.mem_percent) : (function(){ const used=Number(s.mem && s.mem.used != null ? s.mem.used : 0); const total=Number(s.mem && s.mem.total != null ? s.mem.total : 0); if (!total || !isFinite(used)||!isFinite(total)) return 0; return used/total*100; })();
-  if (!isFinite(memv)) memv = 0; memVal.textContent = memv.toFixed(0)+'%';
-  const totalGb = Number(s.mem && s.mem.total != null ? s.mem.total : 0) / 1073741824; memTotal.textContent = (isFinite(totalGb)? totalGb : 0).toFixed(0)+' GB';
+  lastSseAt = Date.now();
+
+  const cpuv = Number(s.cpu_percent||0);
+  cpuVal.textContent = Number.isFinite(cpuv)? cpuv.toFixed(0)+'%' : '-';
+
+  let memv = (s.mem_percent!=null && Number.isFinite(Number(s.mem_percent))) ? Number(s.mem_percent)
+           : (function(){ const used=Number(s.mem && s.mem.used != null ? s.mem.used : 0);
+                           const total=Number(s.mem && s.mem.total != null ? s.mem.total : 0);
+                           if (!total || !Number.isFinite(used)||!Number.isFinite(total)) return 0;
+                           return used/total*100; })();
+  if (!Number.isFinite(memv)) memv = 0;
+  memVal.textContent = memv.toFixed(0)+'%';
+  const totalGb = Number(s.mem && s.mem.total != null ? s.mem.total : 0) / 1073741824;
+  memTotal.textContent = (Number.isFinite(totalGb)? totalGb : 0).toFixed(0)+' GB';
+
   const ts = Number(s.time || s.ts || nowSec());
-  // 使用服务端 ts 平滑滚动窗口，避免客户端时钟偏差
   const w = windowSecs();
   setWindowAll(ts - w, ts);
-  cpuC.push(isFinite(cpuv)?cpuv:0, ts); memC.push(memv, ts);
-  const dsk = Number(s.disk_mb_s||0); diskC.push(isFinite(dsk)?dsk:0, ts);
-  const gu = Number(s.gpu_util_avg||0), gt = Number(s.gpu_temp_avg||0); gpuVal.textContent = isFinite(gu)? gu.toFixed(0)+'%' : '-';
-  gpuUtilC.push(isFinite(gu)?gu:0, ts); gpuTempC.push(isFinite(gt)?gt:0, ts);
+  cpuC.push(Number.isFinite(cpuv)?cpuv:0, ts);
+  memC.push(memv, ts);
+  const dsk = Number(s.disk_mb_s||0); diskC.push(Number.isFinite(dsk)?dsk:0, ts);
+
+  // GPU —— 只用 SSE 的数据
+  const guRaw = (s.gpu_util_avg ?? s.gpu_util ?? (s.gpu && s.gpu.util));
+  const gtRaw = (s.gpu_temp_avg ?? s.gpu_temp ?? (s.gpu && s.gpu.temp));
+  const gu = numOrNull(guRaw);
+  const gt = numOrNull(gtRaw);
+
+  const rec = {
+    at_client: new Date().toISOString(),
+    ts_server: ts, ts_str: fmtTs(ts),
+    cpu_percent: cpuv, mem_percent: memv,
+    gpu_util_raw: guRaw, gpu_util_num: gu, valid_gu: (gu!==null),
+    gpu_temp_raw: gtRaw,  gpu_temp_num: gt, valid_gt: (gt!==null),
+  };
+  window.__METRICS_LOGS.push(rec);
+  if (window.__METRICS_LOGS.length > __LOG_KEEP) window.__METRICS_LOGS.splice(0, window.__METRICS_LOGS.length-__LOG_KEEP);
+
+  console.groupCollapsed(`[SSE/metrics] ts=${fmtTs(ts)} gu=${gu} (raw:${String(guRaw)}) gt=${gt} (raw:${String(gtRaw)})`);
+  console.table([rec]);
+  console.groupEnd();
+
+  if (gu!==null) { gpuVal.textContent = Math.round(gu)+'%'; gpuUtilC.push(gu, ts); }
+  if (gt!==null) { gpuTempC.push(gt, ts); }
+
   document.getElementById('avgCpu').textContent = `${Number(cpuv||0).toFixed(1)}% 当前 | ${(lastAvgCpu||0).toFixed(1)}% 平均`;
   document.getElementById('avgMem').textContent = `${Number(memv||0).toFixed(1)}% 当前 | ${(lastAvgMem||0).toFixed(1)}% 平均`;
 }
@@ -229,9 +323,12 @@ document.getElementById('rangeSeg').addEventListener('click', async (e)=>{
   await loadHistory(); startRealtime();
 });
 
-refreshGPU(); setInterval(refreshGPU, 3000);
+// 只执行一次
+refreshGPUOnce();
 refreshAlerts(); setInterval(refreshAlerts, 10000);
 sampleProcessTop();
 (async()=>{ await loadHistory(); startRealtime(); })();
+
+// 控制台：__METRICS_LOGS.slice(-10)
 </script>
 {% endblock %}
