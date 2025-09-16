@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # build.sh — 生成“OBM 一键安装包”（/opt/obm + root + 9090 + systemd + uvicorn）
-# - systemd 采用：/usr/bin/env bash -lc "/opt/obm/.venv/bin/uvicorn ..."
-# - 排除 data/ 下的 *.db/*.sqlite/*.sqlite3 及 wal/shm/journal
-# - 统一将 .sh 转 LF 并加执行位，避免 203/EXEC
+# 特性：
+# 1) systemd ExecStart 采用 EnvironmentFile 注入变量 + bash -lc 调用 uvicorn（避免变量提前展开的坑）
+# 2) 打包时排除 data/ 下数据库文件（*.db/*.sqlite/*.sqlite3 及 wal/shm/journal）
+# 3) 统一 .sh 转 LF 并加执行位，避免 203/EXEC
+# 4) 可选“离线依赖”：构建阶段用 `pip download` 将 requirements 下载到 wheels/，安装时优先离线安装，失败再回退在线安装
 set -euo pipefail
 
-VERSION="1.0.3-uvicorn-opt-root"
+VERSION="1.0.4-uvicorn-opt-root"
 SERVICE_NAME="obm"
 BUILD_DIR="build"
 STAGE_DIR="${BUILD_DIR}/${SERVICE_NAME}-installer-${VERSION}"
@@ -15,7 +17,6 @@ log(){ echo -e "\033[1;32m[BUILD]\033[0m $*"; }
 warn(){ echo -e "\033[1;33m[WARN]\033[0m  $*"; }
 has(){ command -v "$1" >/dev/null 2>&1; }
 
-# 1) 复制源码到安装包 app/（排除无关与数据库文件）
 copy_app() {
   local dst="$1"; mkdir -p "$dst"
   local ex=(
@@ -46,7 +47,6 @@ copy_app() {
   fi
 }
 
-# 2) 粗略检测 APP_MODULE（FastAPI/Flask），找不到就回退 backend.app:app
 detect_app_module() {
   local f
   f="$(grep -R -n --include='*.py' -E 'FastAPI\s*\(' . 2>/dev/null | cut -d: -f1 | head -n1 || true)"
@@ -60,7 +60,6 @@ detect_app_module() {
   echo "backend.app:app"
 }
 
-# 3) 统一 .sh 为 LF 并加执行位
 normalize_sh() {
   local base="$1"
   [[ -d "$base" ]] || return 0
@@ -68,6 +67,20 @@ normalize_sh() {
     sed -i 's/\r$//' "$f" || true
     chmod +x "$f" || true
   done
+}
+
+build_wheels() {
+  # 将依赖下载到 wheels/，包含 wheels 和 sdists，安装时优先离线
+  local appdir="$1"
+  [[ -f "${appdir}/requirements.txt" ]] || { warn "未找到 requirements.txt，跳过离线依赖打包"; return 0; }
+  mkdir -p "${STAGE_DIR}/wheels"
+  local pip_idx="${PIP_INDEX_URL:-}"
+  log "下载依赖到 wheels/（pip download）…"
+  if [[ -n "$pip_idx" ]]; then
+    python3 -m pip download -r "${appdir}/requirements.txt" -d "${STAGE_DIR}/wheels" --index-url "$pip_idx" || warn "pip download 遇到问题，安装时将回退在线模式"
+  else
+    python3 -m pip download -r "${appdir}/requirements.txt" -d "${STAGE_DIR}/wheels" || warn "pip download 遇到问题，安装时将回退在线模式"
+  fi
 }
 
 mkdir -p "$BUILD_DIR"; rm -rf "$STAGE_DIR"; mkdir -p "$STAGE_DIR"
@@ -91,7 +104,7 @@ TIMEOUT=120
 # PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 EOF
 
-log "写 systemd 单元模板（uvicorn，bash -lc）"
+log "写 systemd 单元模板（依赖 EnvironmentFile 的变量）"
 cat > "${STAGE_DIR}/${SERVICE_NAME}.service.tpl" <<'EOF'
 [Unit]
 Description={{SERVICE_NAME}} Python Web Service
@@ -102,12 +115,7 @@ User={{RUN_USER}}
 Group={{RUN_GROUP}}
 WorkingDirectory={{APP_DIR}}
 EnvironmentFile=-/etc/{{SERVICE_NAME}}.env
-ExecStart=/usr/bin/env bash -lc '\
-  APP_DIR={{APP_DIR}}; SERVICE_NAME={{SERVICE_NAME}}; \
-  [[ -f "/etc/${SERVICE_NAME}.env" ]] && source "/etc/${SERVICE_NAME}.env"; \
-  VENV="${APP_DIR}/.venv"; APP_MODULE="${APP_MODULE:-backend.app:app}"; PORT="${PORT:-9090}"; \
-  exec "${VENV}/bin/uvicorn" "${APP_MODULE}" --host 0.0.0.0 --port "${PORT}" --proxy-headers \
-'
+ExecStart=/usr/bin/env bash -lc '/opt/obm/.venv/bin/uvicorn "${APP_MODULE:-backend.app:app}" --host 0.0.0.0 --port "${PORT:-9090}" --proxy-headers'
 Restart=always
 RestartSec=3
 UMask=0027
@@ -116,7 +124,7 @@ UMask=0027
 WantedBy=multi-user.target
 EOF
 
-log "写 install.sh（root + /opt/obm）"
+log "写 install.sh（支持离线 wheels 优先安装）"
 cat > "${STAGE_DIR}/install.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -156,7 +164,6 @@ if [[ ${#need_pkgs[@]} -gt 0 ]]; then
   else echo "Install manually: ${need_pkgs[*]}"; exit 1; fi
 fi
 
-# 拷贝应用
 mkdir -p "$APP_DIR"
 if command -v rsync >/dev/null 2>&1; then rsync -a --delete "${APP_SRC_DIR}/" "$APP_DIR/"; else
   t="$(mktemp -u).tar"; tar -C "${APP_SRC_DIR}" -cf "$t" .; tar -C "$APP_DIR" -xf "$t"; rm -f "$t"; fi
@@ -166,15 +173,21 @@ chown -R "$RUN_USER:$RUN_GROUP" "$APP_DIR"
 find "$APP_DIR" -type f -name "*.sh" -exec sed -i 's/\r$//' {} +
 find "$APP_DIR" -type f -name "*.sh" -exec chmod 755 {} +
 
-# venv + 依赖
 cd "$APP_DIR"
 if [[ ! -d "$VENV_DIR" ]]; then "$PYTHON_BIN" -m venv "$VENV_DIR"; fi
 source "$VENV_DIR/bin/activate"
+
 ENV_FILE="/etc/${SERVICE_NAME}.env"
 [[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
 [[ -n "${PIP_INDEX_URL:-}" ]] && pip config set global.index-url "$PIP_INDEX_URL" || true
 pip install -U pip wheel || true
-[[ -f requirements.txt ]] && pip install -r requirements.txt
+
+# 优先离线安装（如 wheels/ 存在），失败回退在线
+if [[ -d "$OLDPWD/wheels" ]]; then
+  pip install --no-index --find-links "$OLDPWD/wheels" -r requirements.txt || pip install -r requirements.txt
+else
+  [[ -f requirements.txt ]] && pip install -r requirements.txt
+fi
 
 # /etc/obm.env
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -191,7 +204,6 @@ EOF2
 fi
 chmod 640 "$ENV_FILE"
 
-# 渲染 unit（uvicorn via bash -lc）
 UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
 tpl="$(cat "$OLDPWD/$UNIT_TEMPLATE")"
 tpl="${tpl//\{\{SERVICE_NAME\}\}/$SERVICE_NAME}"
@@ -219,15 +231,24 @@ APP_SRC_DIR="${APP_SRC_DIR:-app}"
 systemctl stop "$SERVICE_NAME" || true
 ts=$(date +%Y%m%d-%H%M%S); mkdir -p "${APP_DIR}/releases"
 tar -C "${APP_DIR}" -czf "${APP_DIR}/releases/app-${ts}.tar.gz" .
+
 if command -v rsync >/dev/null 2>&1; then
   rsync -a --delete --exclude ".venv" "${APP_SRC_DIR}/" "${APP_DIR}/"
 else
   t="$(mktemp -u).tar"; tar -C "${APP_SRC_DIR}" -cf "$t" .; tar -C "${APP_DIR}" -xf "$t"; rm -f "$t"
 fi
+
 find "$APP_DIR" -type f -name "*.sh" -exec sed -i 's/\r$//' {} +
 find "$APP_DIR" -type f -name "*.sh" -exec chmod 755 {} +
+
 if [[ -f "${APP_DIR}/requirements.txt" ]]; then
-  source "${APP_DIR}/.venv/bin/activate"; pip install -r "${APP_DIR}/requirements.txt"
+  source "${APP_DIR}/.venv/bin/activate"
+  # 优先使用升级包旁的 wheels/
+  if [[ -d "$OLDPWD/wheels" ]]; then
+    pip install --no-index --find-links "$OLDPWD/wheels" -r "${APP_DIR}/requirements.txt" || pip install -r "${APP_DIR}/requirements.txt"
+  else
+    pip install -r "${APP_DIR}/requirements.txt"
+  fi
 fi
 systemctl start "$SERVICE_NAME"
 systemctl --no-pager --full status "$SERVICE_NAME" || true
@@ -267,14 +288,13 @@ log "写 README.txt"
 cat > "${STAGE_DIR}/README.txt" <<EOF
 OBM Installer (systemd + uvicorn) — v${VERSION}
 
-默认：
-- 安装目录：/opt/obm
-- 服务名：obm（开机自启）
-- 运行用户：root
-- 端口：9090
-- Unit 的 ExecStart：/usr/bin/env bash -lc "/opt/obm/.venv/bin/uvicorn \${APP_MODULE:-backend.app:app} --host 0.0.0.0 --port \${PORT:-9090} --proxy-headers"
+默认：/opt/obm 安装，服务名 obm，自启，端口 9090，root 运行。
+Unit 使用 EnvironmentFile 的 PORT/APP_MODULE，并通过 bash -lc 调用 uvicorn。
 
-打包已排除 data/ 下数据库文件（*.db/*.sqlite/*.sqlite3 及 wal/shm/journal），并将所有 .sh 转为 LF + 可执行。
+打包：
+- 已排除 data/ 下数据库文件（*.db/*.sqlite/*.sqlite3 及 wal/shm/journal）
+- 已统一 .sh 为 LF + 可执行
+- 若本地存在 requirements.txt，会将依赖下载到 wheels/，安装/升级时优先离线安装（失败回退在线）
 
 安装：
   sudo ./install.sh
@@ -286,9 +306,13 @@ OBM Installer (systemd + uvicorn) — v${VERSION}
   sudo ./uninstall.sh
 EOF
 
-# 规范 .sh 后再打包
+# 规范 .sh
 normalize_sh "$STAGE_DIR"
 
-log "打包 ${OUT_TGZ}"
+# 可选：构建离线依赖
+build_wheels "${STAGE_DIR}/app" || true
+
+# 打包
+mkdir -p "$BUILD_DIR"
 tar -C "$BUILD_DIR" -czf "$OUT_TGZ" "$(basename "$STAGE_DIR")"
-log "完成：${OUT_TGZ}"
+echo "DONE -> ${OUT_TGZ}"
