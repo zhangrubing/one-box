@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 GPU数据管理工具 - SQLite3增删改查操作
 """
@@ -8,11 +7,6 @@ import time
 import json
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
-import sys
-import os
-
-# 添加项目路径
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from backend.config import DB_PATH
 
 
