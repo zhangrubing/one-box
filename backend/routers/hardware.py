@@ -3,7 +3,7 @@ import psutil
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from ..deps import require_user
-from ..utils.system import _cpu_model, get_machine_serial
+from ..utils.system import _cpu_model, get_machine_serial, _gpu_info
 from ..web import render
 
 
@@ -49,7 +49,33 @@ async def api_system_summary(request: Request, user: dict = Depends(require_user
             disks.append({"device": p.device, "mountpoint": p.mountpoint, "fstype": p.fstype, "total": u.total, "used": u.used, "percent": u.percent})
         except Exception:
             disks.append({"device": p.device, "mountpoint": p.mountpoint, "fstype": p.fstype, "total": None, "used": None, "percent": None})
-    return {"os": os_info, "cpu": cpu_info, "memory": mem_info, "disks": disks}
+    # 获取GPU信息
+    gpu_info = _gpu_info()
+    
+    # 格式化GPU数据以匹配前端期望的格式
+    gpu_data = {
+        "gpus": [],
+        "note": ""
+    }
+    
+    if gpu_info.get("gpus"):
+        # 如果有GPU，格式化数据
+        for i, gpu in enumerate(gpu_info["gpus"]):
+            gpu_data["gpus"].append({
+                "index": i,
+                "name": gpu.get("name", "Unknown"),
+                "driver": gpu.get("driver", "Unknown"),
+                "mem_total": int(gpu.get("mem_total", 0)),
+                "mem_used": int(gpu.get("mem_used", 0)),
+                "temp": gpu.get("temp", 0),
+                "util": gpu.get("util", 0)
+            })
+        gpu_data["note"] = f"检测到 {len(gpu_info['gpus'])} 个GPU"
+    else:
+        # 如果没有GPU，显示友好提示
+        gpu_data["note"] = "未检测到NVIDIA GPU"
+    
+    return {"os": os_info, "cpu": cpu_info, "memory": mem_info, "disks": disks, "gpu": gpu_data}
 
 
 @router.get("/api/system/serial")
